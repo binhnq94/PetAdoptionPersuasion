@@ -98,6 +98,7 @@ class HierarchicalAttention(nn.Module):
         return flat_document[flat_sequence_lengths > 0], flat_sequence_lengths[flat_sequence_lengths > 0]
 
     def make_tokens_att_full(self, tokens_att, document_lengths, batch_size, max_sent):
+        """Padding to all document have same len."""
         # print("tokens_att.shape", tokens_att.shape)
         out_tokens_att = torch.zeros(batch_size, max_sent, tokens_att.shape[-1]).cuda()
         # print("out_tokens.shape", out_tokens_att.shape)
