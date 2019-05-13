@@ -16,8 +16,9 @@ torch.manual_seed(SEED)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
-
-SAVE_DIR = f"hierarchical_attention_networks/models/bilstm_{datetime.datetime.now().strftime('%y%m%d%-H%M%S'):}"
+CURRENT_DIR = os.path.dirname(__file__)
+BASENAME_DIR = os.path.basename(CURRENT_DIR)
+SAVE_DIR = f"{CURRENT_DIR}/models/{BASENAME_DIR}_{datetime.datetime.now().strftime('%y%m%d%-H%M%S'):}"
 
 
 def clip_gradient(model, clip_value):

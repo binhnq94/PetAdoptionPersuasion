@@ -12,6 +12,9 @@ TRAIN_FN = f'converted-{VERSION_DATA}_train_petfinder_data_study2.csv'
 VAL_FN = f'converted-{VERSION_DATA}_val_petfinder_data_study2.csv'
 TEST_FN = f'converted-{VERSION_DATA}_test_petfinder_data_study2.csv'
 
+if not os.path.exists(f'{CURRENT_PATH}/models)'):
+    os.makedirs(f'{CURRENT_PATH}/models)')
+
 
 def sent_tokenize(x):
     return x.split('<end>')
