@@ -2,7 +2,6 @@ import torch
 from .load_data import load_data
 from .model import HierarchicalAttention
 import torch.nn.functional as F
-from sklearn.metrics import classification_report
 import os
 import datetime
 import numpy as np
@@ -16,6 +15,9 @@ random.seed(SEED)
 torch.manual_seed(SEED)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
+
+
+SAVE_DIR = f"hierarchical_attention_networks/models/bilstm_{datetime.datetime.now().strftime('%y%m%d%-H%M%S'):}"
 
 
 def clip_gradient(model, clip_value):
@@ -101,24 +103,17 @@ def eval_model(model, data_iter):
     return total_epoch_loss / len(data_iter), count_true / count_all, y_gt, y_prediction
 
 
-def run_test(model, val_iter):
-    _, _, y_gt, y_prediction = eval_model(model, val_iter)
-    print(classification_report(y_gt, y_prediction, digits=4, labels=[0, 1],
-                                target_names=['Adopted', 'Unadopted']))
-
-
 def main(args):
 
     # prepare
-    save_dir = f"baseline_bilstm/models/bilstm_{datetime.datetime.now().strftime('%y%m%d%-H%M%S'):}"
-    assert not os.path.exists(save_dir)
-    os.makedirs(save_dir)
+    assert not os.path.exists(SAVE_DIR)
+    os.makedirs(SAVE_DIR)
 
     # parameters:
     # learning_rate = 2e-5
     batch_size = args.batchsize
-    embedding_length = 200
-    # batch_size = 32
+    # embedding_length = 200
+    embedding_length = 300
     output_size = 2
     hidden_size = 256
 
@@ -146,19 +141,20 @@ def main(args):
         state_dict = torch.load(args.pretrained)
         model.load_state_dict(state_dict)
 
+    print("Start Train")
     for epoch in range(args.epoch):
         train_loss, train_acc = train_model(model, train_iter, epoch)
         val_loss, val_acc, _, _ = eval_model(model, valid_iter)
 
-        print("Epoch:{:4d}\tloss:{}, acc:{}, "
+        print("Epoch:{:4d}, loss:{}, acc:{}, "
               "val_loss:{}, val_acc {}".format(epoch+1, train_loss, train_acc, val_loss, val_acc))
 
-        save_path = f'{save_dir}/epoch:{epoch+1:04d}_acc{val_acc:4f}_loss{val_loss:4f}.pth'
+        save_path = f'{SAVE_DIR}/epoch:{epoch + 1:04d}_acc{val_acc:4f}_loss{val_loss:4f}.pth'
 
         print(f'Saving model to {save_path}')
         torch.save(model.state_dict(), save_path)
 
-    return save_dir
+    return SAVE_DIR
 
 
 if __name__ == "__main__":
