@@ -152,3 +152,139 @@ class HierarchicalAttention(nn.Module):
 
         final_outputs = self.final_linear(sents_att)
         return final_outputs
+
+
+class MultiAttentionLayer(nn.Module):
+    def __init__(self, input_size, attention_size=64, num_att=5):
+        super(MultiAttentionLayer, self).__init__()
+        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        self.input_size = input_size
+        self.attention_size = attention_size
+        self.num_att = num_att
+        self.in_dense_layer = torch.nn.Linear(self.input_size, self.num_att*self.attention_size)
+
+        self.out_dense_layers = []
+        for i in range(self.num_att):
+            out_dense_layer = torch.nn.Linear(self.attention_size, 1, bias=False)
+            # out_dense_layer.cuda()
+            self.add_module(f"out_dense_{i}", out_dense_layer)
+            self.out_dense_layers.append(out_dense_layer)
+
+    def forward(self, seq_input, lengths):
+        """
+
+        :param seq_input: [batch_size, seq_len, emb]
+        :param lengths: [batch_size, 1]
+        :return:
+        """
+        # [batch_size, seq_len, emb_size] = seq_input.shape
+        out_dense = self.in_dense_layer(seq_input)  # [batch_size, seq_len, self.num_att * self.attention_size]
+        out_dense = torch.tanh(out_dense)
+
+        list_out_dense_0 = torch.split(out_dense, self.attention_size, dim=2)
+        # self.num_att * Tensor [batch_size, seq_len, self.attention_size]
+
+        list_out = []
+        list_out_weight = []
+        for index_att, out_dense in enumerate(list_out_dense_0):
+            out_dense_1 = self.out_dense_layers[index_att](out_dense)
+            exps = torch.exp(out_dense_1)
+            mask = create_mask(lengths, seq_input.shape[1]).to(self.device).unsqueeze(2)
+            masked_exps = exps * mask
+            sumed_exps = torch.sum(masked_exps, 1, keepdim=True)
+            weights_att = masked_exps/sumed_exps
+            output_of_attention = torch.sum(weights_att*seq_input, 1)
+
+            list_out.append(output_of_attention)
+            list_out_weight.append(weights_att.squeeze(2))
+
+        out = torch.cat(list_out, dim=-1)
+
+        return out, list_out_weight
+
+
+class MultiAttentionLayerV2(nn.Module):
+    def __init__(self, input_size, attention_size=64, num_att=5):
+        super(MultiAttentionLayerV2, self).__init__()
+        self.num_att = num_att
+        self.list_att = []
+        for i in range(self.num_att):
+            att_layer = AttentionLayer(input_size, attention_size)
+            att_layer.cuda()
+            self.list_att.append(att_layer)
+
+    def forward(self, seq_input, lengths):
+        """
+
+        :param seq_input: [batch_size, seq_len, emb]
+        :param lengths: [batch_size, 1]
+        :return:
+        """
+        list_att_output = []
+        list_weight = []
+
+        for i in range(self.num_att):
+            out, weight = self.list_att[i](seq_input, lengths)
+
+            list_att_output.append(out)
+            list_weight.append(weight)
+
+        out = torch.cat(list_att_output, dim=-1)
+        # out_weight = torch.cat()
+        return out, list_weight
+
+
+class HierarchicalMultiAttention(HierarchicalAttention):
+
+    def __init__(self, output_size, embedding_size, embedding_weight, num_att=5, lstm_hidden_size=256,
+                 lstm_num_layers=1, attention_size=64):
+        super(HierarchicalAttention, self).__init__()
+
+        self.num_att = num_att
+        self.word_embeddings = nn.Embedding.from_pretrained(embedding_weight)
+        self.lstm_layers_0 = LstmLayer(embedding_size, lstm_hidden_size, num_layers=lstm_num_layers)
+        self.lstm_layers_1 = LstmLayer(2*self.num_att*lstm_hidden_size, lstm_hidden_size, num_layers=lstm_num_layers)
+
+        self.att_layers_0 = MultiAttentionLayer(lstm_hidden_size*2, attention_size=attention_size, num_att=self.num_att)
+        self.att_layers_1 = MultiAttentionLayer(lstm_hidden_size*2, attention_size=attention_size, num_att=self.num_att)
+
+        self.final_linear = nn.Linear(2*self.num_att*lstm_hidden_size, output_size)
+
+    def forward(self, document, document_lengths, sequence_lengths):
+        """
+
+        :param document: [batch_size, max_sent, max_word]
+        :param document_lengths: [batch_size]
+        :param sequence_lengths: [batch_size, max_seq]
+        :return:
+        """
+        origin_shape = document.shape
+        # print("document_shape", document.shape)
+        flat_document = document.view(-1, origin_shape[-1])
+        # print("flat_document.shape", flat_document.shape)
+
+        # print("sequence_lengths", sequence_lengths.shape)
+        flat_sequence_lengths = sequence_lengths.view(-1)
+        # print("flat_sequence_lengths", flat_sequence_lengths.shape)
+
+        flat_document, flat_sequence_lengths = self.filter_sents(flat_document, flat_sequence_lengths)
+
+        flat_emb_document = self.word_embeddings(flat_document)
+        # flat_emb_document = emb_document.view(-1, emb_document.shape[-2], emb_document.shape[-1])
+        # print("flat_emb_document.shape", flat_emb_document.shape)
+
+        tokens_lstm = self.lstm_layers_0(flat_emb_document, flat_sequence_lengths)
+        tokens_att, _ = self.att_layers_0(tokens_lstm, flat_sequence_lengths)
+        # print("tokens_att.shape", tokens_att.shape)
+        tokens_att = self.make_tokens_att_full(tokens_att, document_lengths, origin_shape[0], origin_shape[1])
+        # print("full_tokens_att.shape", tokens_att.shape)
+
+        # tokens_att = tokens_att.view(emb_document.shape[0], emb_document.shape[1], -1)
+        assert tokens_att.shape[-1] == 256*2*self.num_att
+
+        sents_lstm = self.lstm_layers_1(tokens_att, document_lengths)
+        sents_att, _ = self.att_layers_1(sents_lstm, document_lengths)
+        # print("sents_att.shape", sents_att.shape)
+
+        final_outputs = self.final_linear(sents_att)
+        return final_outputs
