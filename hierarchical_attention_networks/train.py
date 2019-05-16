@@ -18,6 +18,14 @@ CURRENT_DIR = os.path.dirname(__file__)
 BASENAME_DIR = os.path.basename(CURRENT_DIR)
 
 
+# LAMDA = 0.1
+# LAMDA = 0.05
+LAMDA = 0.01
+
+
+DEBUG = False
+
+
 def clip_gradient(model, clip_value):
     params = list(filter(lambda p: p.grad is not None, model.parameters()))
     for p in params:
@@ -36,21 +44,36 @@ def get_data_from_batch(batch):
     return document, document_lengths, sent_lengths, target
 
 
-def train_model(model, train_iter, epoch):
+def train_model(model, train_iter, optim, epoch):
     total_epoch_loss = 0
 
     count_true = 0
     count_all = 0
 
     model.cuda()
-    optim = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()))
     model.train()
     for idx, batch in enumerate(train_iter):
         document, document_lengths, sent_lengths, target = get_data_from_batch(batch)
         optim.zero_grad()
         prediction = model(document, document_lengths, sent_lengths)
 
+        if model.custom_loss:
+            prediction, custom_loss = prediction
+
         loss = loss_fn(prediction, target)
+
+        if model.custom_loss:
+            if DEBUG:
+                print("cross_entropy_loss", loss, "custom_loss", custom_loss)
+            loss = loss + LAMDA*custom_loss
+            if torch.isnan(loss).sum() > 0:
+                print("cross_entropy_loss", loss, "custom_loss", custom_loss)
+                print("document.shape", document.shape)
+                print("document_lengths", document_lengths)
+                print("sent_lengths", sent_lengths)
+                print("target", target)
+                raise ValueError("Loss = NaN")
+
         num_corrects = (torch.max(prediction, 1)[1].view(target.size()).data == target.data).float().sum()
         # acc = 100.0 * num_corrects / len(batch)
         loss.backward()
@@ -62,6 +85,7 @@ def train_model(model, train_iter, epoch):
         count_all += len(batch)
 
         if (idx + 1) % (len(train_iter) // 5) == 0:
+            print("DEBUG:", "cross_entropy_loss", loss.item()*(1-LAMDA), "custom_loss", custom_loss.item())
             print(f'Epoch: {epoch + 1}, Idx: {idx + 1}, Training Loss: {loss.item():.4f}, '
                   f'Training Accuracy: {count_true / count_all: .4f}%')
 
@@ -86,7 +110,12 @@ def eval_model(model, data_iter):
         for idx, batch in enumerate(data_iter):
             document, document_lengths, sent_lengths, target = get_data_from_batch(batch)
             prediction = model(document, document_lengths, sent_lengths)
+            if model.custom_loss:
+                prediction, custom_loss = prediction
             loss = loss_fn(prediction, target)
+            if model.custom_loss:
+                loss = loss + LAMDA*custom_loss
+
             num_corrects = (torch.max(prediction, 1)[1].view(target.size()).data == target.data).sum()
             # acc = 100.0 * num_corrects/len(batch)
             total_epoch_loss += loss.item()
@@ -142,7 +171,9 @@ def main(args):
         model = HierarchicalMultiAttention(output_size=output_size,
                                            embedding_size=embedding_length,
                                            embedding_weight=word_embeddings,
-                                           lstm_hidden_size=hidden_size)
+                                           lstm_hidden_size=hidden_size,
+                                           custom_loss=args.custom_loss,
+                                           num_att=10)
     else:
         raise ValueError('Model kind = {}'.format(args.model))
 
@@ -154,9 +185,11 @@ def main(args):
         state_dict = torch.load(args.pretrained)
         model.load_state_dict(state_dict)
 
+    optim = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()))
+
     print("Start Train")
     for epoch in range(args.epoch):
-        train_loss, train_acc = train_model(model, train_iter, epoch)
+        train_loss, train_acc = train_model(model, train_iter, optim, epoch)
         val_loss, val_acc, _, _ = eval_model(model, valid_iter)
 
         print("Epoch:{:4d}, loss:{}, acc:{}, "
@@ -179,6 +212,7 @@ if __name__ == "__main__":
     parser.add_argument("--emb_size", type=int, default=200, help='Embedding size')
     parser.add_argument('--pretrained', type=str, default=None)
     parser.add_argument('--model', type=str, choices=['hierarchical', 'multi_att'], default='hierarchical')
+    parser.add_argument('--custom_loss', action='store_true', help='Using custom loss')
     args = parser.parse_args()
 
     SAVE_DIR = f"{CURRENT_DIR}/models/{args.model}_{datetime.datetime.now().strftime('%y%m%d%-H%M%S'):}"
