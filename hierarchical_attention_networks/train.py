@@ -152,7 +152,9 @@ def prepare_model(args, output_size, word_embeddings):
                                            embedding_weight=word_embeddings,
                                            lstm_hidden_size=args.lstm_h_size,
                                            custom_loss=args.custom_loss,
-                                           attention_hops=10)
+                                           lstm_num_layers=args.lstm_layers,
+                                           attention_size=args.att_size,
+                                           attention_hops=args.att_hops)
     else:
         raise ValueError('Model kind = {}'.format(args.model))
 

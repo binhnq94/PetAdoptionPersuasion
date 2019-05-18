@@ -83,6 +83,7 @@ class HierarchicalAttention(nn.Module):
     def __init__(self, output_size, embedding_size, embedding_weight, lstm_hidden_size=256,
                  lstm_num_layers=1, attention_size=64):
         super(HierarchicalAttention, self).__init__()
+        self.lstm_hidden_size = lstm_hidden_size
 
         self.word_embeddings = nn.Embedding.from_pretrained(embedding_weight)
 
@@ -144,7 +145,8 @@ class HierarchicalAttention(nn.Module):
         # print("full_tokens_att.shape", tokens_att.shape)
 
         # tokens_att = tokens_att.view(emb_document.shape[0], emb_document.shape[1], -1)
-        assert tokens_att.shape[-1] == 256*2
+        # assert tokens_att.shape[-1] == 256*2
+        assert tokens_att.shape[-1] == self.lstm_hidden_size*2
 
         sents_lstm = self.lstm_layers_1(tokens_att, document_lengths)
         sents_att, _ = self.att_layers_1(sents_lstm, document_lengths)
@@ -188,6 +190,7 @@ class HierarchicalMultiAttention(HierarchicalAttention):
         super(HierarchicalAttention, self).__init__()
         self.custom_loss = custom_loss
         self.attention_hops = attention_hops
+        self.lstm_hidden_size = lstm_hidden_size
         self.word_embeddings = nn.Embedding.from_pretrained(embedding_weight)
         self.lstm_layers = nn.ModuleList([
                 LstmLayer(embedding_size, lstm_hidden_size, num_layers=lstm_num_layers),
@@ -241,7 +244,7 @@ class HierarchicalMultiAttention(HierarchicalAttention):
 
         tokens_att = self.make_tokens_att_full(tokens_att, document_lengths, origin_shape[0], origin_shape[1])
 
-        assert tokens_att.shape[-1] == 256*2
+        assert tokens_att.shape[-1] == self.lstm_hidden_size*2
 
         sents_lstm = self.lstm_layers[1](tokens_att, document_lengths)
         sents_att, att_weights_1 = self.att_layers[1](sents_lstm, document_lengths)

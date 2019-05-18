@@ -8,6 +8,7 @@ from .utils import *
 
 BATCH_SIZE = 64
 
+
 def key_func(fpath):
     acc = fpath.split('_')[1]
     acc = acc.replace('acc', '')
@@ -21,7 +22,7 @@ def key_func(fpath):
 
 
 def get_best_model(folder_path):
-    models = list(os.listdir(folder_path))
+    models = list(p for p in os.listdir(folder_path) if p.endswith('.pth'))
     sorted_models = sorted(models, key=key_func, reverse=True)
     # sorted_models = sorted(models, key=key_func, reverse=False)
     print(sorted_models[:2])
