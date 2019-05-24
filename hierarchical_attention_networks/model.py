@@ -35,9 +35,9 @@ class AttentionLayer(nn.Module):
         mask = create_mask(lengths, seq_input.shape[1]).to(self.device).unsqueeze(2)
         masked_exps = exps * mask
         sumed_exps = torch.sum(masked_exps, 1, keepdim=True)
-        weights_att = masked_exps/sumed_exps
+        weights_att = masked_exps / sumed_exps
 
-        out = torch.sum(weights_att*seq_input, 1)
+        out = torch.sum(weights_att * seq_input, 1)
         return out, weights_att.squeeze(2)
 
 
@@ -50,8 +50,8 @@ class LstmLayer(nn.Module):
         self.lstm = nn.LSTM(input_size, hidden_size, num_layers=num_layers, bidirectional=True, batch_first=True)
 
     def init_hidden(self, batch_size):
-        h_0 = Variable(torch.zeros(self.num_layers*2, batch_size, self.hidden_size).cuda())
-        c_0 = Variable(torch.zeros(self.num_layers*2, batch_size, self.hidden_size).cuda())
+        h_0 = Variable(torch.zeros(self.num_layers * 2, batch_size, self.hidden_size).cuda())
+        c_0 = Variable(torch.zeros(self.num_layers * 2, batch_size, self.hidden_size).cuda())
         return h_0, c_0
 
     def forward(self, sequence_input, seq_lengths):
@@ -88,12 +88,12 @@ class HierarchicalAttention(nn.Module):
         self.word_embeddings = nn.Embedding.from_pretrained(embedding_weight)
 
         self.lstm_layers_0 = LstmLayer(embedding_size, lstm_hidden_size, num_layers=lstm_num_layers)
-        self.lstm_layers_1 = LstmLayer(lstm_hidden_size*2, lstm_hidden_size, num_layers=lstm_num_layers)
+        self.lstm_layers_1 = LstmLayer(lstm_hidden_size * 2, lstm_hidden_size, num_layers=lstm_num_layers)
 
-        self.att_layers_0 = AttentionLayer(lstm_hidden_size*2, attention_size)
-        self.att_layers_1 = AttentionLayer(lstm_hidden_size*2, attention_size)
+        self.att_layers_0 = AttentionLayer(lstm_hidden_size * 2, attention_size)
+        self.att_layers_1 = AttentionLayer(lstm_hidden_size * 2, attention_size)
 
-        self.final_linear = nn.Linear(lstm_hidden_size*2, output_size)
+        self.final_linear = nn.Linear(lstm_hidden_size * 2, output_size)
 
     def filter_sents(self, flat_document, flat_sequence_lengths):
         return flat_document[flat_sequence_lengths > 0], flat_sequence_lengths[flat_sequence_lengths > 0]
@@ -111,7 +111,7 @@ class HierarchicalAttention(nn.Module):
             # print("-----------")
             # print("idx, num_sent, max_sent, pre_num_sent", idx, num_sent.tolist(), max_sent, pre_num_sent)
             # print(idx*max_sent, idx*max_sent+num_sent)
-            out_tokens_att[idx, :num_sent] = tokens_att[pre_num_sent:pre_num_sent+num_sent]
+            out_tokens_att[idx, :num_sent] = tokens_att[pre_num_sent:pre_num_sent + num_sent]
             pre_num_sent += num_sent
         return out_tokens_att
 
@@ -146,7 +146,7 @@ class HierarchicalAttention(nn.Module):
 
         # tokens_att = tokens_att.view(emb_document.shape[0], emb_document.shape[1], -1)
         # assert tokens_att.shape[-1] == 256*2
-        assert tokens_att.shape[-1] == self.lstm_hidden_size*2
+        assert tokens_att.shape[-1] == self.lstm_hidden_size * 2
 
         sents_lstm = self.lstm_layers_1(tokens_att, document_lengths)
         sents_att, _ = self.att_layers_1(sents_lstm, document_lengths)
@@ -167,16 +167,16 @@ class MultiAttentionLayer(nn.Module):
 
     def forward(self, seq_input, lengths):
         batch_size, max_len = seq_input.shape[:-1]
-        x = torch.tanh(self.linear_first(seq_input))
-        x = self.linear_second(x)
-        attention = x.transpose(1, 2)
+        x = torch.tanh(self.linear_first(seq_input))  # [bsize, max_len, att_size]
+        x = self.linear_second(x)  # [bsize, max_len, att_hops]
+        attention = x.transpose(1, 2)  # [bsize, att_hops, max_len]
 
         mask = torch.arange(max_len).cuda().expand(batch_size, max_len) < lengths.unsqueeze(1)
         mask = mask.unsqueeze(1).repeat(1, self.attention_hops, 1)
         attention[~mask] = -float('inf')
 
-        attention = attention.softmax(-1)
-        seq_embedding = attention@seq_input
+        attention = attention.softmax(-1)  # [bsize, att_hops, max_len]
+        seq_embedding = attention @ seq_input  # [bsize, att_hops, emb_size]
 
         avg_seq_embedding = seq_embedding.mean(1)
 
@@ -185,28 +185,32 @@ class MultiAttentionLayer(nn.Module):
 
 class HierarchicalMultiAttention(HierarchicalAttention):
 
-    def __init__(self, output_size, embedding_size, embedding_weight, attention_hops=5, lstm_hidden_size=256,
-                 lstm_num_layers=1, attention_size=64, custom_loss=False):
+    def __init__(self, output_size, embedding_size, embedding_weight, attention_hops, lstm_hidden_size=256,
+                 lstm_num_layers=1, attention_size=64, fc_size=128, drop_out=0, custom_loss=False):
         super(HierarchicalAttention, self).__init__()
         self.custom_loss = custom_loss
         self.attention_hops = attention_hops
         self.lstm_hidden_size = lstm_hidden_size
         self.word_embeddings = nn.Embedding.from_pretrained(embedding_weight)
         self.lstm_layers = nn.ModuleList([
-                LstmLayer(embedding_size, lstm_hidden_size, num_layers=lstm_num_layers),
-                LstmLayer(2 * lstm_hidden_size, lstm_hidden_size, num_layers=lstm_num_layers)
+            LstmLayer(embedding_size, lstm_hidden_size, num_layers=lstm_num_layers),
+            LstmLayer(2 * lstm_hidden_size, lstm_hidden_size, num_layers=lstm_num_layers)
         ])
         self.att_layers = nn.ModuleList([
             MultiAttentionLayer(lstm_hidden_size * 2, attention_size=attention_size,
-                                attention_hops=self.attention_hops),
+                                attention_hops=self.attention_hops[0]),
             MultiAttentionLayer(lstm_hidden_size * 2, attention_size=attention_size,
-                                attention_hops=self.attention_hops)
+                                attention_hops=self.attention_hops[1])
         ])
-        self.final_linear = nn.Linear(2 * lstm_hidden_size, output_size)
+        self.drop_out = drop_out
+        if self.drop_out > 0:
+            self.drop_out_layer = nn.Dropout(self.drop_out)
+        self.fc_layer = nn.Linear(2 * lstm_hidden_size, fc_size)
+        self.final_linear = nn.Linear(fc_size, output_size)
 
     def compute_loss_from_att_weights(self, att_weights):
         tranpose_w = torch.transpose(att_weights, 1, 2)
-        loss = (att_weights@tranpose_w - torch.eye(att_weights.shape[1]).cuda()).norm(dim=(1, 2))
+        loss = (att_weights @ tranpose_w - torch.eye(att_weights.shape[1]).cuda()).norm(dim=(1, 2))
         return loss
 
     def compute_loss(self, att_weights0, att_weights1, document_lengths):
@@ -216,13 +220,22 @@ class HierarchicalMultiAttention(HierarchicalAttention):
 
         pre_index = 0
         for length in document_lengths:
-            list_word_levels.append(loss_word_levels[pre_index:pre_index+length].mean().unsqueeze(0))
+            list_word_levels.append(loss_word_levels[pre_index:pre_index + length].mean().unsqueeze(0))
             pre_index += length
 
         sum_loss_word_levels = torch.cat(list_word_levels)
 
-        loss_sen_levels = self.compute_loss_from_att_weights(att_weights1) + sum_loss_word_levels
-        return loss_sen_levels.mean()
+        # loss_sen_levels = self.compute_loss_from_att_weights(att_weights1) + sum_loss_word_levels
+        # return loss_sen_levels.mean()
+        return sum_loss_word_levels.mean(), self.compute_loss_from_att_weights(att_weights1).mean()
+
+    def compute_fc_layers(self, x):
+        if self.drop_out > 0:
+            x = self.drop_out_layer(x)
+
+        x = self.fc_layer(x)
+        x = self.final_linear(x)
+        return x
 
     def forward(self, document, document_lengths, sequence_lengths):
         """
@@ -244,12 +257,12 @@ class HierarchicalMultiAttention(HierarchicalAttention):
 
         tokens_att = self.make_tokens_att_full(tokens_att, document_lengths, origin_shape[0], origin_shape[1])
 
-        assert tokens_att.shape[-1] == self.lstm_hidden_size*2
+        assert tokens_att.shape[-1] == self.lstm_hidden_size * 2
 
         sents_lstm = self.lstm_layers[1](tokens_att, document_lengths)
         sents_att, att_weights_1 = self.att_layers[1](sents_lstm, document_lengths)
 
-        final_outputs = self.final_linear(sents_att)
+        final_outputs = self.compute_fc_layers(sents_att)
 
         if self.custom_loss:
             custom_loss = self.compute_loss(att_weights_0, att_weights_1, document_lengths)

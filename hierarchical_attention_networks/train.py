@@ -6,6 +6,7 @@ import datetime
 import numpy as np
 import random
 from .utils import *
+import time
 
 SEED = 0
 
@@ -40,7 +41,7 @@ def get_data_from_batch(batch):
     return document, document_lengths, sent_lengths, target
 
 
-def train_model(model, train_iter, optim, epoch, penalty_ratio):
+def train_model(model, train_iter, optim, epoch, args):
     total_epoch_loss = 0
 
     count_true = 0
@@ -48,41 +49,61 @@ def train_model(model, train_iter, optim, epoch, penalty_ratio):
 
     model.cuda()
     model.train()
+    count_backward = args.count_backward
+    optim.zero_grad()
+
     for idx, batch in enumerate(train_iter):
         document, document_lengths, sent_lengths, target = get_data_from_batch(batch)
-        optim.zero_grad()
+        # optim.zero_grad()
         prediction = model(document, document_lengths, sent_lengths)
 
         if model.custom_loss:
             prediction, custom_loss = prediction
 
-        loss = loss_fn(prediction, target)
-        cross_entropy_loss = loss
+        cross_entropy_loss = loss_fn(prediction, target)
+        # cross_entropy_loss = loss
 
         if model.custom_loss:
             if DEBUG:
-                print("cross_entropy_loss", loss.item(), "custom_loss", custom_loss.item())
-            loss = loss + penalty_ratio*custom_loss
+                print("cross_entropy_loss", cross_entropy_loss.item(),
+                      "custom_loss_word", custom_loss[0].item(),
+                      "custom_loss_sen", custom_loss[1].item())
+            # loss = loss + penalty_ratio*custom_loss
+            loss = cross_entropy_loss + args.c*custom_loss[0] + args.d*custom_loss[1]
             if torch.isnan(loss).sum() > 0:
-                print("cross_entropy_loss", loss.item(), "custom_loss", custom_loss.item())
+                print("cross_entropy_loss", cross_entropy_loss.item(),
+                      "custom_loss_word", custom_loss[0].item(),
+                      "custom_loss_sen", custom_loss[1].item())
                 print("document.shape", document.shape)
                 print("document_lengths", document_lengths)
                 print("sent_lengths", sent_lengths)
                 print("target", target)
                 raise ValueError("Loss = NaN")
+        else:
+            loss = cross_entropy_loss
 
         num_corrects = (torch.max(prediction, 1)[1].view(target.size()).data == target.data).float().sum()
         # acc = 100.0 * num_corrects / len(batch)
         loss.backward()
-        clip_gradient(model, 1e-1)
-        optim.step()
+        count_backward += 1
+        if count_backward == 4 or idx == len(train_iter) - 1:
+            clip_gradient(model, 1e-1)
+            optim.step()
+            count_backward = 0
+            optim.zero_grad()
 
         total_epoch_loss += loss.item()
         count_true += num_corrects
         count_all += len(batch)
 
         if (idx + 1) % (len(train_iter) // 5) == 0:
-            print("DEBUG:", "cross_entropy_loss", cross_entropy_loss.item(), "custom_loss", custom_loss.item())
+            # print("DEBUG:", "cross_entropy_loss", cross_entropy_loss.item(), "custom_loss", custom_loss.item())
+            if model.custom_loss:
+                print("DEBUG", "cross_entropy_loss", cross_entropy_loss.item(),
+                      "custom_loss_word", custom_loss[0].item(),
+                      "custom_loss_sen", custom_loss[1].item())
+            else:
+                print("DEBUG", "cross_entropy_loss", cross_entropy_loss.item())
             print(f'Epoch: {epoch + 1}, Idx: {idx + 1}, Training Loss: {loss.item():.4f}, '
                   f'Training Accuracy: {count_true / count_all: .4f}%')
 
@@ -93,7 +114,7 @@ def loss_fn(prediction, target):
     return F.cross_entropy(prediction, target)
 
 
-def eval_model(model, data_iter, penalty_ratio):
+def eval_model(model, data_iter, args):
     total_epoch_loss = 0
 
     y_prediction = []
@@ -109,9 +130,14 @@ def eval_model(model, data_iter, penalty_ratio):
             prediction = model(document, document_lengths, sent_lengths)
             if model.custom_loss:
                 prediction, custom_loss = prediction
-            loss = loss_fn(prediction, target)
+
+            cross_entropy_loss = loss_fn(prediction, target)
+            # cross_entropy_loss = loss
+
             if model.custom_loss:
-                loss = loss + penalty_ratio*custom_loss
+                loss = cross_entropy_loss + args.c * custom_loss[0] + args.d * custom_loss[1]
+            else:
+                loss = cross_entropy_loss
 
             num_corrects = (torch.max(prediction, 1)[1].view(target.size()).data == target.data).sum()
             # acc = 100.0 * num_corrects/len(batch)
@@ -154,7 +180,9 @@ def prepare_model(args, output_size, word_embeddings):
                                            custom_loss=args.custom_loss,
                                            lstm_num_layers=args.lstm_layers,
                                            attention_size=args.att_size,
-                                           attention_hops=args.att_hops)
+                                           attention_hops=args.att_hops,
+                                           fc_size=args.fc_size,
+                                           drop_out=args.drop_out)
     else:
         raise ValueError('Model kind = {}'.format(args.model))
 
@@ -167,12 +195,13 @@ def prepare_model(args, output_size, word_embeddings):
 
 def main(args):
     print("args", vars(args))
+    print("real batch_size", args.count_backward*args.batch_size)
     save_dir = prepare_save_dir(args)
     output_size = 2
 
     TEXT, LABEL, vocab_size, word_embeddings, \
-    train_iter, valid_iter, test_iter = load_data(train_bsize=args.batchsize,
-                                                  bsize=args.batchsize * 2,
+    train_iter, valid_iter, test_iter = load_data(train_bsize=args.batch_size,
+                                                  bsize=args.batch_size * 2,
                                                   embedding_length=args.emb_size)
     print('LABEL.vocab.stoi', LABEL.vocab.stoi)
 
@@ -180,6 +209,7 @@ def main(args):
     torch.device('cuda:0')
 
     model, optim = prepare_model(args, output_size, word_embeddings)
+    print("state_dict", list(model.state_dict()))
 
     if torch.cuda.is_available():
         model.cuda()
@@ -192,8 +222,9 @@ def main(args):
 
     print("Start Train")
     for epoch in range(args.epoch):
-        train_loss, train_acc = train_model(model, train_iter, optim, epoch, args.penalty_ratio)
-        val_loss, val_acc, _, _ = eval_model(model, valid_iter, args.penalty_ratio)
+        # train_loss, train_acc = train_model(model, train_iter, optim, epoch, args.penalty_ratio)
+        train_loss, train_acc = train_model(model, train_iter, optim, epoch, args)
+        val_loss, val_acc, _, _ = eval_model(model, valid_iter, args)
 
         print("Epoch:{:4d}, loss:{}, acc:{}, "
               "val_loss:{}, val_acc {}".format(epoch + 1, train_loss, train_acc, val_loss, val_acc))
@@ -207,10 +238,17 @@ def main(args):
 
 
 if __name__ == "__main__":
+    def parse_int_list(input_):
+        if input_ is None:
+            return []
+        return list(map(int, input_.split(',')))
+
+
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--batchsize", type=int, default=16)
+    parser.add_argument("--batch_size", type=int, default=16)
+    parser.add_argument('--count_backward', type=int, default=4)
     parser.add_argument("--epoch", type=int, default=25)
 
     parser.add_argument('--model', type=str, choices=['hierarchical', 'multi_att'], default='hierarchical')
@@ -218,15 +256,26 @@ if __name__ == "__main__":
     parser.add_argument('--lstm_h_size', type=int, default=256, help='LSTM size')
     parser.add_argument('--lstm_layers', type=int, default=1, help='Number of lstm layers')
     parser.add_argument("--att_size", type=int, default=64, help='Attention size')
-    parser.add_argument('--att_hops', type=int, default=10, help='Number attention hops')
+    parser.add_argument('--att_hops', type=parse_int_list, default=[10, 10], help='Number attention hops')
+    parser.add_argument('--fc_size', type=int, default=128, help='Full connected size.')
+    parser.add_argument('--drop_out', default=0.0, type=float, help='Drop out for last fc')
     parser.add_argument('--custom_loss', action='store_true', help='Using custom loss')
-    parser.add_argument('--penalty_ratio', type=float, default=0.03, help='Lambda of custom_loss')
+    # parser.add_argument('--penalty_ratio', type=float, default=0.03, help='Lambda of custom_loss')
+    parser.add_argument('--c', type=float, default=0.01, help='Lambda of custom_loss word level')
+    parser.add_argument('--d', type=float, default=0.01, help='Lambda of custom_loss sentence level')
 
     parser.add_argument('--optim', type=str, choices=['adam', 'rmsprop'], default='rmsprop')
 
     parser.add_argument('--pretrained', type=str, default=None)
 
     args_ = parser.parse_args()
-    save_dir_ = main(args_)
+    try:
+        begin_time = time.time()
+        save_dir_ = main(args_)
+    except KeyboardInterrupt:
+        print("training_time", time.time()-begin_time)
+
+    print("training_time", time.time() - begin_time)
+
     from .run_test import run_test
     run_test(save_dir_)

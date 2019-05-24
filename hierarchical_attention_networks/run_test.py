@@ -55,7 +55,7 @@ def run_test(save_dir):
     model.cuda()
     model.load_state_dict(state_dict)
     model.eval()
-    _, _, y_gt, y_prediction = eval_model(model, test_iter, args.penalty_ratio)
+    _, _, y_gt, y_prediction = eval_model(model, test_iter, args)
     print(classification_report(y_gt, y_prediction, digits=4, labels=[0, 1],
                                 target_names=['Adopted', 'Unadopted']))
 
