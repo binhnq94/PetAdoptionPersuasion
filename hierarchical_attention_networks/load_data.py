@@ -7,10 +7,14 @@ import torch
 CURRENT_PATH = os.path.dirname(__file__)
 
 # VERSION_DATA = 'v3'
-VERSION_DATA = 'v4'
-TRAIN_FN = f'converted-{VERSION_DATA}_train_petfinder_data_study2.csv'
-VAL_FN = f'converted-{VERSION_DATA}_val_petfinder_data_study2.csv'
-TEST_FN = f'converted-{VERSION_DATA}_test_petfinder_data_study2.csv'
+# VERSION_DATA = 'v4'
+# TRAIN_FN = f'converted-{VERSION_DATA}_train_petfinder_data_study2.csv'
+# VAL_FN = f'converted-{VERSION_DATA}_val_petfinder_data_study2.csv'
+# TEST_FN = f'converted-{VERSION_DATA}_test_petfinder_data_study2.csv'
+VERSION_DATA = 'v5'
+TRAIN_FN = f'converted-{VERSION_DATA}_train.csv'
+VAL_FN = f'converted-{VERSION_DATA}_val.csv'
+TEST_FN = f'converted-{VERSION_DATA}_test.csv'
 
 if not os.path.exists(f'{CURRENT_PATH}/models)'):
     os.makedirs(f'{CURRENT_PATH}/models)')
@@ -38,7 +42,7 @@ def load_data(train_bsize=32, bsize=64, embedding_length=200):
         label = torch.load(label_field_file)
 
     train_data, val_data, test_data = data.TabularDataset.splits(
-        path='datasets',
+        path='datasets/190524',
         train=TRAIN_FN,
         validation=VAL_FN,
         test=TEST_FN,
