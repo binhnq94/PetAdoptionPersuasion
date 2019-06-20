@@ -86,7 +86,7 @@ def train_model(model, train_iter, optim, epoch, args):
         # acc = 100.0 * num_corrects / len(batch)
         loss.backward()
         count_backward += 1
-        if count_backward == 4 or idx == len(train_iter) - 1:
+        if count_backward == args.count_backward or idx == len(train_iter) - 1:
             clip_gradient(model, 1e-1)
             optim.step()
             count_backward = 0
