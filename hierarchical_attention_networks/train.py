@@ -49,7 +49,8 @@ def train_model(model, train_iter, optim, epoch, args):
 
     model.cuda()
     model.train()
-    count_backward = args.count_backward
+    # count_backward = args.count_backward
+    count_backward = 0
     optim.zero_grad()
 
     for idx, batch in enumerate(train_iter):
@@ -91,6 +92,7 @@ def train_model(model, train_iter, optim, epoch, args):
             optim.step()
             count_backward = 0
             optim.zero_grad()
+            # print('here')
 
         total_epoch_loss += loss.item()
         count_true += num_corrects
@@ -182,7 +184,8 @@ def prepare_model(args, output_size, word_embeddings):
                                            attention_size=args.att_size,
                                            attention_hops=args.att_hops,
                                            fc_size=args.fc_size,
-                                           drop_out=args.drop_out)
+                                           drop_out=args.drop_out,
+                                           use_transformer=args.use_transformer)
     else:
         raise ValueError('Model kind = {}'.format(args.model))
 
@@ -267,6 +270,8 @@ if __name__ == "__main__":
     parser.add_argument('--optim', type=str, choices=['adam', 'rmsprop'], default='rmsprop')
 
     parser.add_argument('--pretrained', type=str, default=None)
+
+    parser.add_argument('--use_transformer', action='store_true')
 
     args_ = parser.parse_args()
     try:

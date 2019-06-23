@@ -28,6 +28,7 @@ def get_best_model(folder_path):
     print(sorted_models[:2])
 
     return os.path.join(folder_path, sorted_models[0])
+    # return os.path.join(folder_path, "epoch:0001_acc0.830936_loss0.701270.pth")
 
 
 def run_test(save_dir):

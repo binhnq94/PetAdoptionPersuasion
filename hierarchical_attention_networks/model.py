@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.autograd import Variable
+import math
 
 
 def create_mask(lengths, max_length):
@@ -55,6 +56,12 @@ class LstmLayer(nn.Module):
         return h_0, c_0
 
     def forward(self, sequence_input, seq_lengths):
+        """
+
+        :param sequence_input:
+        :param seq_lengths:
+        :return: [batch_size, max_word, 2*rnn_size]
+        """
         init_length = sequence_input.shape[1]
         batch_size = sequence_input.shape[0]
 
@@ -166,6 +173,12 @@ class MultiAttentionLayer(nn.Module):
         self.linear_second = nn.Linear(attention_size, attention_hops, bias=False)
 
     def forward(self, seq_input, lengths):
+        """
+
+        :param seq_input: [bsize, max_len, ]
+        :param lengths:
+        :return:
+        """
         batch_size, max_len = seq_input.shape[:-1]
         x = torch.tanh(self.linear_first(seq_input))  # [bsize, max_len, att_size]
         x = self.linear_second(x)  # [bsize, max_len, att_hops]
@@ -186,7 +199,8 @@ class MultiAttentionLayer(nn.Module):
 class HierarchicalMultiAttention(HierarchicalAttention):
 
     def __init__(self, output_size, embedding_size, embedding_weight, attention_hops, lstm_hidden_size=256,
-                 lstm_num_layers=1, attention_size=64, fc_size=128, drop_out=0, custom_loss=False):
+                 lstm_num_layers=1, attention_size=64, fc_size=128, drop_out=0, custom_loss=False,
+                 use_transformer=False):
         super(HierarchicalAttention, self).__init__()
         self.custom_loss = custom_loss
         self.attention_hops = attention_hops
@@ -202,6 +216,12 @@ class HierarchicalMultiAttention(HierarchicalAttention):
             MultiAttentionLayer(lstm_hidden_size * 2, attention_size=attention_size,
                                 attention_hops=self.attention_hops[1])
         ])
+        self.use_transformer = use_transformer
+        if use_transformer:
+            self.transformers = nn.ModuleList([
+                TransformerLayer(lstm_hidden_size * 2),
+                TransformerLayer(lstm_hidden_size * 2)
+            ])
         self.drop_out = drop_out
         if self.drop_out > 0:
             self.drop_out_layer = nn.Dropout(self.drop_out)
@@ -253,6 +273,9 @@ class HierarchicalMultiAttention(HierarchicalAttention):
         flat_emb_document = self.word_embeddings(flat_document)
 
         tokens_lstm = self.lstm_layers[0](flat_emb_document, flat_sequence_lengths)
+        if self.use_transformer:
+            self.transformers[0](tokens_lstm, flat_sequence_lengths)
+
         tokens_att, att_weights_0 = self.att_layers[0](tokens_lstm, flat_sequence_lengths)
 
         tokens_att = self.make_tokens_att_full(tokens_att, document_lengths, origin_shape[0], origin_shape[1])
@@ -260,6 +283,8 @@ class HierarchicalMultiAttention(HierarchicalAttention):
         assert tokens_att.shape[-1] == self.lstm_hidden_size * 2
 
         sents_lstm = self.lstm_layers[1](tokens_att, document_lengths)
+        if self.use_transformer:
+            self.transformers[1](sents_lstm, document_lengths)
         sents_att, att_weights_1 = self.att_layers[1](sents_lstm, document_lengths)
 
         final_outputs = self.compute_fc_layers(sents_att)
@@ -268,3 +293,53 @@ class HierarchicalMultiAttention(HierarchicalAttention):
             custom_loss = self.compute_loss(att_weights_0, att_weights_1, document_lengths)
             return final_outputs, custom_loss
         return final_outputs
+
+
+class TransformerLayer(nn.Module):
+    def __init__(self, input_size, dropout=0.1):
+        super(TransformerLayer, self).__init__()
+
+        self.input_size = input_size
+
+        self.K = nn.Linear(input_size, input_size)
+        self.Q = nn.Linear(input_size, input_size)
+        self.V = nn.Linear(input_size, input_size)
+
+        self.dropout = bool(dropout)
+        if dropout:
+            self.dropout_layer = nn.Dropout(dropout)
+
+    def forward(self, sequence_input, lengths):
+        """
+
+        :param sequence_input: [batch_size, max_word, emb_size]
+        :param lengths: [batch_size, 1]
+        :return:
+        """
+        batch_size, max_len = sequence_input.shape[:-1]
+        # print('transformer', 'sequence_input.shape', sequence_input.shape)
+
+        K = self.K(sequence_input)
+        Q = self.Q(sequence_input)
+        V = self.V(sequence_input)
+
+        scores = Q@(K.transpose(-2, -1)) / math.sqrt(self.input_size)
+
+        # print('transformer', 'scores.shape', scores.shape)
+
+        mask = torch.arange(max_len).cuda().expand(batch_size, max_len) < lengths.unsqueeze(1)   # [batch_size, max_len]
+        mask = mask.unsqueeze(1).repeat(1, max_len, 1)      # mask.unsqueeze(1) -> [batch_size, 1, max_len] -> [batch_size, max_len, max_len]
+        # print('transformer', 'mask.shape', mask.shape)
+
+        scores[~mask] = -float('inf')
+
+        p_attn = scores.softmax(-1)
+
+        if self.dropout:
+            p_attn = self.dropout_layer(p_attn)
+
+        x = p_attn @ V
+
+        # print('transformer', 'x.shape', x.shape)
+
+        return x
