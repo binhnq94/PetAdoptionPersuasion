@@ -78,6 +78,28 @@ class LstmLayer(nn.Module):
         return lstm_outputs
 
 
+def make_tokens_att_full(tokens_att, document_lengths, batch_size, max_sent):
+    """Padding to all document have same len."""
+    # print("tokens_att.shape", tokens_att.shape)
+    out_tokens_att = torch.zeros(batch_size, max_sent, tokens_att.shape[-1]).cuda()
+    # print("out_tokens.shape", out_tokens_att.shape)
+
+    # print(document_lengths.tolist())
+
+    pre_num_sent = 0
+    for idx, num_sent in enumerate(document_lengths):
+        # print("-----------")
+        # print("idx, num_sent, max_sent, pre_num_sent", idx, num_sent.tolist(), max_sent, pre_num_sent)
+        # print(idx*max_sent, idx*max_sent+num_sent)
+        out_tokens_att[idx, :num_sent] = tokens_att[pre_num_sent:pre_num_sent + num_sent]
+        pre_num_sent += num_sent
+    return out_tokens_att
+
+
+def filter_sents(flat_document, flat_sequence_lengths):
+    return flat_document[flat_sequence_lengths > 0], flat_sequence_lengths[flat_sequence_lengths > 0]
+
+
 class HierarchicalAttention(nn.Module):
 
     def __init__(self, output_size, embedding_size, embedding_weight, lstm_hidden_size=256,
@@ -94,26 +116,6 @@ class HierarchicalAttention(nn.Module):
         self.att_layers_1 = AttentionLayer(lstm_hidden_size * 2, attention_size)
 
         self.final_linear = nn.Linear(lstm_hidden_size * 2, output_size)
-
-    def filter_sents(self, flat_document, flat_sequence_lengths):
-        return flat_document[flat_sequence_lengths > 0], flat_sequence_lengths[flat_sequence_lengths > 0]
-
-    def make_tokens_att_full(self, tokens_att, document_lengths, batch_size, max_sent):
-        """Padding to all document have same len."""
-        # print("tokens_att.shape", tokens_att.shape)
-        out_tokens_att = torch.zeros(batch_size, max_sent, tokens_att.shape[-1]).cuda()
-        # print("out_tokens.shape", out_tokens_att.shape)
-
-        # print(document_lengths.tolist())
-
-        pre_num_sent = 0
-        for idx, num_sent in enumerate(document_lengths):
-            # print("-----------")
-            # print("idx, num_sent, max_sent, pre_num_sent", idx, num_sent.tolist(), max_sent, pre_num_sent)
-            # print(idx*max_sent, idx*max_sent+num_sent)
-            out_tokens_att[idx, :num_sent] = tokens_att[pre_num_sent:pre_num_sent + num_sent]
-            pre_num_sent += num_sent
-        return out_tokens_att
 
     def forward(self, document, document_lengths, sequence_lengths):
         """
@@ -132,7 +134,7 @@ class HierarchicalAttention(nn.Module):
         flat_sequence_lengths = sequence_lengths.view(-1)
         # print("flat_sequence_lengths", flat_sequence_lengths.shape)
 
-        flat_document, flat_sequence_lengths = self.filter_sents(flat_document, flat_sequence_lengths)
+        flat_document, flat_sequence_lengths = filter_sents(flat_document, flat_sequence_lengths)
 
         flat_emb_document = self.word_embeddings(flat_document)
         # flat_emb_document = emb_document.view(-1, emb_document.shape[-2], emb_document.shape[-1])
@@ -141,7 +143,7 @@ class HierarchicalAttention(nn.Module):
         tokens_lstm = self.lstm_layers_0(flat_emb_document, flat_sequence_lengths)
         tokens_att, _ = self.att_layers_0(tokens_lstm, flat_sequence_lengths)
         # print("tokens_att.shape", tokens_att.shape)
-        tokens_att = self.make_tokens_att_full(tokens_att, document_lengths, origin_shape[0], origin_shape[1])
+        tokens_att = make_tokens_att_full(tokens_att, document_lengths, origin_shape[0], origin_shape[1])
         # print("full_tokens_att.shape", tokens_att.shape)
 
         # tokens_att = tokens_att.view(emb_document.shape[0], emb_document.shape[1], -1)
@@ -183,11 +185,34 @@ class MultiAttentionLayer(nn.Module):
         return avg_seq_embedding, attention
 
 
-class HierarchicalMultiAttention(HierarchicalAttention):
+def compute_loss_from_att_weights(att_weights):
+    tranpose_w = torch.transpose(att_weights, 1, 2)
+    loss = (att_weights @ tranpose_w - torch.eye(att_weights.shape[1]).cuda()).norm(dim=(1, 2))
+    return loss
+
+
+def compute_loss(att_weights0, att_weights1, document_lengths):
+    loss_word_levels = compute_loss_from_att_weights(att_weights0)
+
+    list_word_levels = []
+
+    pre_index = 0
+    for length in document_lengths:
+        list_word_levels.append(loss_word_levels[pre_index:pre_index + length].mean().unsqueeze(0))
+        pre_index += length
+
+    sum_loss_word_levels = torch.cat(list_word_levels)
+
+    # loss_sen_levels = self.compute_loss_from_att_weights(att_weights1) + sum_loss_word_levels
+    # return loss_sen_levels.mean()
+    return sum_loss_word_levels.mean(), compute_loss_from_att_weights(att_weights1).mean()
+
+
+class HierarchicalMultiAttention(nn.Module):
 
     def __init__(self, output_size, embedding_size, embedding_weight, attention_hops, lstm_hidden_size=256,
                  lstm_num_layers=1, attention_size=64, fc_size=128, drop_out=0, custom_loss=False):
-        super(HierarchicalAttention, self).__init__()
+        super(HierarchicalMultiAttention, self).__init__()
         self.custom_loss = custom_loss
         self.attention_hops = attention_hops
         self.lstm_hidden_size = lstm_hidden_size
@@ -207,27 +232,6 @@ class HierarchicalMultiAttention(HierarchicalAttention):
             self.drop_out_layer = nn.Dropout(self.drop_out)
         self.fc_layer = nn.Linear(2 * lstm_hidden_size, fc_size)
         self.final_linear = nn.Linear(fc_size, output_size)
-
-    def compute_loss_from_att_weights(self, att_weights):
-        tranpose_w = torch.transpose(att_weights, 1, 2)
-        loss = (att_weights @ tranpose_w - torch.eye(att_weights.shape[1]).cuda()).norm(dim=(1, 2))
-        return loss
-
-    def compute_loss(self, att_weights0, att_weights1, document_lengths):
-        loss_word_levels = self.compute_loss_from_att_weights(att_weights0)
-
-        list_word_levels = []
-
-        pre_index = 0
-        for length in document_lengths:
-            list_word_levels.append(loss_word_levels[pre_index:pre_index + length].mean().unsqueeze(0))
-            pre_index += length
-
-        sum_loss_word_levels = torch.cat(list_word_levels)
-
-        # loss_sen_levels = self.compute_loss_from_att_weights(att_weights1) + sum_loss_word_levels
-        # return loss_sen_levels.mean()
-        return sum_loss_word_levels.mean(), self.compute_loss_from_att_weights(att_weights1).mean()
 
     def compute_fc_layers(self, x):
         if self.drop_out > 0:
@@ -249,13 +253,13 @@ class HierarchicalMultiAttention(HierarchicalAttention):
         flat_document = document.view(-1, origin_shape[-1])
         flat_sequence_lengths = sequence_lengths.view(-1)
 
-        flat_document, flat_sequence_lengths = self.filter_sents(flat_document, flat_sequence_lengths)
+        flat_document, flat_sequence_lengths = filter_sents(flat_document, flat_sequence_lengths)
         flat_emb_document = self.word_embeddings(flat_document)
 
         tokens_lstm = self.lstm_layers[0](flat_emb_document, flat_sequence_lengths)
         tokens_att, att_weights_0 = self.att_layers[0](tokens_lstm, flat_sequence_lengths)
 
-        tokens_att = self.make_tokens_att_full(tokens_att, document_lengths, origin_shape[0], origin_shape[1])
+        tokens_att = make_tokens_att_full(tokens_att, document_lengths, origin_shape[0], origin_shape[1])
 
         assert tokens_att.shape[-1] == self.lstm_hidden_size * 2
 
@@ -265,6 +269,6 @@ class HierarchicalMultiAttention(HierarchicalAttention):
         final_outputs = self.compute_fc_layers(sents_att)
 
         if self.custom_loss:
-            custom_loss = self.compute_loss(att_weights_0, att_weights_1, document_lengths)
+            custom_loss = compute_loss(att_weights_0, att_weights_1, document_lengths)
             return final_outputs, custom_loss
         return final_outputs
