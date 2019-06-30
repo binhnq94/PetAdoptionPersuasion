@@ -49,7 +49,8 @@ def train_model(model, train_iter, optim, epoch, args):
 
     model.cuda()
     model.train()
-    count_backward = args.count_backward
+    # count_backward = args.count_backward
+    count_backward = 0
     optim.zero_grad()
 
     for idx, batch in enumerate(train_iter):
