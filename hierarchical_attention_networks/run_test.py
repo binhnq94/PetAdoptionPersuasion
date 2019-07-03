@@ -45,8 +45,8 @@ def run_test(save_dir):
     print(LABEL.vocab.stoi)
     print(TEXT.vocab.vectors.size())
     state_dict = torch.load(mpath)
-    print(state_dict['word_embeddings.weight'].size())
-    assert state_dict['word_embeddings.weight'].size() == TEXT.vocab.vectors.size()
+    # print(state_dict['word_embeddings.weight'].size())
+    # assert state_dict['word_embeddings.weight'].size() == TEXT.vocab.vectors.size()
 
     print(state_dict.keys())
 

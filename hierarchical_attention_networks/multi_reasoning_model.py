@@ -26,6 +26,9 @@ class LayerOne(nn.Module):
                                 attention_hops=self.attention_hops[1])
         ])
 
+        self.another_att_layer = MultiAttentionLayer(lstm_hidden_size * 2, attention_size=attention_size,
+                                                     attention_hops=self.attention_hops[1])
+
     def sentence_level(self, flat_emb_document, flat_sequence_lengths, document_lengths, origin_shape):
         tokens_lstm = self.lstm_layers[0](flat_emb_document, flat_sequence_lengths)
 
@@ -34,7 +37,7 @@ class LayerOne(nn.Module):
 
         assert sentences_present.shape[-1] == self.lstm_hidden_size * 2
 
-        sentences_present_layer_one, att_weights_01 = self.att_layers[0](tokens_lstm, flat_sequence_lengths)
+        sentences_present_layer_one, another_att_weights = self.another_att_layer(tokens_lstm, flat_sequence_lengths)
         # sentences_present_layer_one = make_tokens_att_full(sentences_present_layer_one, document_lengths,
         #                                                    origin_shape[0], origin_shape[1])
 
