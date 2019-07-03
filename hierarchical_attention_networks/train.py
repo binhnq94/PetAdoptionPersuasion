@@ -155,7 +155,7 @@ def eval_model(model, data_iter, args):
 
 
 def prepare_save_dir(args):
-    save_dir = f"{CURRENT_DIR}/models/{args.model}_{datetime.datetime.now().strftime('%y%m%d%-H%M%S'):}"
+    save_dir = f"{CURRENT_DIR}/models/{args.model}_{datetime.datetime.now().strftime('%y%m%d%H%M%S'):}"
     # prepare save_dir
     assert not os.path.exists(save_dir)
     print("SAVE_DIR", save_dir)
@@ -184,6 +184,13 @@ def prepare_model(args, output_size, word_embeddings):
                                            attention_hops=args.att_hops,
                                            fc_size=args.fc_size,
                                            drop_out=args.drop_out)
+
+    elif args.model == 'multi_reasoning':
+        from .multi_reasoning_model import MultiReasoning
+        model = MultiReasoning(output_size=output_size,
+                               embedding_weight=word_embeddings,
+                               args=args)
+
     else:
         raise ValueError('Model kind = {}'.format(args.model))
 
@@ -252,7 +259,8 @@ if __name__ == "__main__":
     parser.add_argument('--count_backward', type=int, default=4)
     parser.add_argument("--epoch", type=int, default=25)
 
-    parser.add_argument('--model', type=str, choices=['hierarchical', 'multi_att'], default='hierarchical')
+    parser.add_argument('--model', type=str, choices=['hierarchical', 'multi_att', 'multi_reasoning'],
+                        default='hierarchical')
     parser.add_argument("--emb_size", type=int, default=200, help='Embedding size')
     parser.add_argument('--lstm_h_size', type=int, default=256, help='LSTM size')
     parser.add_argument('--lstm_layers', type=int, default=1, help='Number of lstm layers')
@@ -271,12 +279,12 @@ if __name__ == "__main__":
 
     args_ = parser.parse_args()
     try:
-        begin_time = time.time()
+        begin_time_ = time.time()
         save_dir_ = main(args_)
     except KeyboardInterrupt:
-        print("training_time", time.time()-begin_time)
+        pass
 
-    print("training_time", time.time() - begin_time)
+    print("training_time", time.time() - begin_time_)
 
     from .run_test import run_test
     run_test(save_dir_)

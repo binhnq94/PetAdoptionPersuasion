@@ -16,8 +16,8 @@ TRAIN_FN = f'converted-{VERSION_DATA}_train.csv'
 VAL_FN = f'converted-{VERSION_DATA}_val.csv'
 TEST_FN = f'converted-{VERSION_DATA}_test.csv'
 
-if not os.path.exists(f'{CURRENT_PATH}/models)'):
-    os.makedirs(f'{CURRENT_PATH}/models)')
+if not os.path.exists(f'{CURRENT_PATH}/models'):
+    os.makedirs(f'{CURRENT_PATH}/models')
 
 
 def sent_tokenize(x):
