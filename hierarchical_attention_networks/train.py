@@ -181,14 +181,13 @@ def prepare_model(args, output_size, word_embeddings):
                                            attention_size=args.att_size,
                                            attention_hops=args.att_hops,
                                            fc_size=args.fc_size,
-                                           drop_out=args.drop_out)
-
+                                           drop_out=args.drop_out,
+                                           use_transformer=args.use_transformer)
     elif args.model == 'multi_reasoning':
         from .multi_reasoning_model import MultiReasoning
         model = MultiReasoning(output_size=output_size,
                                embedding_weight=word_embeddings,
                                args=args)
-
     else:
         raise ValueError('Model kind = {}'.format(args.model))
 
@@ -280,6 +279,8 @@ if __name__ == "__main__":
     parser.add_argument('--optim', type=str, choices=['adam', 'rmsprop'], default='rmsprop')
 
     parser.add_argument('--pretrained', type=str, default=None)
+
+    parser.add_argument('--use_transformer', action='store_true')
 
     args_ = parser.parse_args()
     try:
