@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.autograd import Variable
+import math
 
 
 def create_mask(lengths, max_length):
@@ -273,7 +274,7 @@ class HierarchicalMultiAttention(nn.Module):
 
         tokens_lstm = self.lstm_layers[0](flat_emb_document, flat_sequence_lengths)
         if self.use_transformer:
-            self.transformers[0](tokens_lstm, flat_sequence_lengths)
+            tokens_lstm = self.transformers[0](tokens_lstm, flat_sequence_lengths)
 
         tokens_att, att_weights_0 = self.att_layers[0](tokens_lstm, flat_sequence_lengths)
 
@@ -283,7 +284,7 @@ class HierarchicalMultiAttention(nn.Module):
 
         sents_lstm = self.lstm_layers[1](tokens_att, document_lengths)
         if self.use_transformer:
-            self.transformers[1](sents_lstm, document_lengths)
+            sents_lstm = self.transformers[1](sents_lstm, document_lengths)
         sents_att, att_weights_1 = self.att_layers[1](sents_lstm, document_lengths)
 
         final_outputs = self.compute_fc_layers(sents_att)

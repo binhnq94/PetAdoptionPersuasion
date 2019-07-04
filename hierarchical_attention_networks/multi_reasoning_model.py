@@ -1,14 +1,14 @@
 import torch
 import torch.nn as nn
 from .model import LstmLayer, MultiAttentionLayer, make_tokens_att_full, \
-    compute_loss_from_att_weights, compute_custom_loss, filter_sents, compute_loss_word_level
+    compute_loss_from_att_weights, compute_custom_loss, filter_sents, compute_loss_word_level, TransformerLayer
 
 
 class LayerOne(nn.Module):
 
     def __init__(self, embedding_size, embedding_weight, attention_hops, lstm_hidden_size=256,
                  lstm_num_layers=1, attention_size=64,
-                 custom_loss=False
+                 custom_loss=False, use_transformer=False
                  ):
         super(LayerOne, self).__init__()
         self.custom_loss = custom_loss
@@ -29,6 +29,13 @@ class LayerOne(nn.Module):
         self.another_att_layer = MultiAttentionLayer(lstm_hidden_size * 2, attention_size=attention_size,
                                                      attention_hops=self.attention_hops[1])
 
+        self.use_transformer = use_transformer
+        if use_transformer:
+            self.transformers = nn.ModuleList([
+                TransformerLayer(lstm_hidden_size * 2),
+                TransformerLayer(lstm_hidden_size * 2)
+            ])
+
         # self.fc_for_sen_present = nn.Linear(2*lstm_hidden_size, 2*lstm_hidden_size)
         # self.fc_for_sen_present_drop = nn.Dropout(0.5)
         # self.fc_for_doc_present = nn.Linear(2*lstm_hidden_size, 2*lstm_hidden_size)
@@ -36,7 +43,8 @@ class LayerOne(nn.Module):
 
     def sentence_level(self, flat_emb_document, flat_sequence_lengths, document_lengths, origin_shape):
         tokens_lstm = self.lstm_layers[0](flat_emb_document, flat_sequence_lengths)
-
+        if self.use_transformer:
+            tokens_lstm = self.transformers[0](tokens_lstm, flat_sequence_lengths)
         sentences_present, att_weights_0 = self.att_layers[0](tokens_lstm, flat_sequence_lengths)
         sentences_present = make_tokens_att_full(sentences_present, document_lengths, origin_shape[0], origin_shape[1])
 
@@ -50,6 +58,8 @@ class LayerOne(nn.Module):
 
     def document_level(self, sentences_present, document_lengths):
         sents_lstm = self.lstm_layers[1](sentences_present, document_lengths)
+        if self.use_transformer:
+            sents_lstm = self.transformers[1](sents_lstm, document_lengths)
         documents_present, att_weights_1 = self.att_layers[1](sents_lstm, document_lengths)
         return documents_present, att_weights_1
 
@@ -82,7 +92,6 @@ class LayerOne(nn.Module):
         # documents_present = self.fc_for_doc_present_drop(documents_present)
         # documents_present = self.fc_for_doc_present(documents_present)
 
-        # TODO: do custom_loss
         if self.custom_loss:
             custom_loss = compute_loss_word_level(att_weights_0, document_lengths).mean(), \
                           compute_loss_word_level(another_att_weights, document_lengths).mean(), \
@@ -95,7 +104,7 @@ class LayerTwo(nn.Module):
 
     def __init__(self, input_size, attention_hops, lstm_hidden_size=256,
                  lstm_num_layers=1, attention_size=64,
-                 custom_loss=False
+                 custom_loss=False, use_transformer=False
                  ):
         super(LayerTwo, self).__init__()
         self.custom_loss = custom_loss
@@ -111,6 +120,11 @@ class LayerTwo(nn.Module):
             MultiAttentionLayer(lstm_hidden_size * 2, attention_size=attention_size,
                                 attention_hops=self.attention_hops[1])
         ])
+        if use_transformer:
+            self.transformers = nn.ModuleList([
+                TransformerLayer(lstm_hidden_size * 2),
+                TransformerLayer(lstm_hidden_size * 2)
+            ])
 
     def forward(self, tokens_lstm_layer_one, sentences_present_layer_one, documents_present_layer_one,
                 document, document_lengths, sequence_lengths):
@@ -137,6 +151,10 @@ class LayerTwo(nn.Module):
         # TODO: element-wise product tokens_att_layer_one and tokens_lstm
         tokens_lstm = tokens_lstm * sentences_present_layer_one.unsqueeze(1)
 
+        # TODO: attention front of product???
+        if self.use_transformer:
+            tokens_lstm = self.transformers[0](tokens_lstm, flat_sequence_lengths)
+
         sentences_present, att_weights_0 = self.att_layers[0](tokens_lstm, flat_sequence_lengths)
         sentences_present = make_tokens_att_full(sentences_present, document_lengths, origin_shape[0], origin_shape[1])
 
@@ -147,9 +165,11 @@ class LayerTwo(nn.Module):
         # TODO: element-wise product sents_lstm and sents_att_layer_one
         sents_lstm = sents_lstm * documents_present_layer_one.unsqueeze(1)
 
+        if self.use_transformer:
+            sents_lstm = self.transformers[1](sents_lstm, document_lengths)
+
         documents_present, att_weights_1 = self.att_layers[1](sents_lstm, document_lengths)
 
-        # TODO: do custom_loss
         if self.custom_loss:
             custom_loss = compute_custom_loss(att_weights_0, att_weights_1, document_lengths)
             return documents_present, custom_loss
