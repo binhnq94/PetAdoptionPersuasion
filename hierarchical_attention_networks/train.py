@@ -19,7 +19,6 @@ torch.backends.cudnn.benchmark = False
 CURRENT_DIR = os.path.dirname(__file__)
 BASENAME_DIR = os.path.basename(CURRENT_DIR)
 
-
 DEBUG = False
 
 
@@ -67,14 +66,13 @@ def train_model(model, train_iter, optim, epoch, args):
         if model.custom_loss:
             if DEBUG:
                 print("cross_entropy_loss", cross_entropy_loss.item(),
-                      "custom_loss_word", custom_loss[0].item(),
-                      "custom_loss_sen", custom_loss[1].item())
-            # loss = loss + penalty_ratio*custom_loss
-            loss = cross_entropy_loss + args.c*custom_loss[0] + args.d*custom_loss[1]
+                      "custom_loss", custom_loss.tolist())
+            loss = cross_entropy_loss + (torch.Tensor(args.penalty_ratio).cuda() * custom_loss).sum()
+            # print("Here", cross_entropy_loss.tolist(), (torch.Tensor(args.penalty_ratio)*custom_loss).sum())
+            # loss = cross_entropy_loss + args.c*custom_loss[0] + args.d*custom_loss[1]
             if torch.isnan(loss).sum() > 0:
                 print("cross_entropy_loss", cross_entropy_loss.item(),
-                      "custom_loss_word", custom_loss[0].item(),
-                      "custom_loss_sen", custom_loss[1].item())
+                      "custom_loss", custom_loss.tolist())
                 print("document.shape", document.shape)
                 print("document_lengths", document_lengths)
                 print("sent_lengths", sent_lengths)
@@ -101,8 +99,7 @@ def train_model(model, train_iter, optim, epoch, args):
             # print("DEBUG:", "cross_entropy_loss", cross_entropy_loss.item(), "custom_loss", custom_loss.item())
             if model.custom_loss:
                 print("DEBUG", "cross_entropy_loss", cross_entropy_loss.item(),
-                      "custom_loss_word", custom_loss[0].item(),
-                      "custom_loss_sen", custom_loss[1].item())
+                      "custom_loss", custom_loss.tolist())
             else:
                 print("DEBUG", "cross_entropy_loss", cross_entropy_loss.item())
             print(f'Epoch: {epoch + 1}, Idx: {idx + 1}, Training Loss: {loss.item():.4f}, '
@@ -136,7 +133,8 @@ def eval_model(model, data_iter, args):
             # cross_entropy_loss = loss
 
             if model.custom_loss:
-                loss = cross_entropy_loss + args.c * custom_loss[0] + args.d * custom_loss[1]
+                loss = cross_entropy_loss + (torch.Tensor(args.penalty_ratio).cuda() * custom_loss).sum()
+                # loss = cross_entropy_loss + args.c * custom_loss[0] + args.d * custom_loss[1]
             else:
                 loss = cross_entropy_loss
 
@@ -203,7 +201,7 @@ def prepare_model(args, output_size, word_embeddings):
 
 def main(args):
     print("args", vars(args))
-    print("real batch_size", args.count_backward*args.batch_size)
+    print("real batch_size", args.count_backward * args.batch_size)
     save_dir = prepare_save_dir(args)
     output_size = 2
 
@@ -252,6 +250,12 @@ if __name__ == "__main__":
         return list(map(int, input_.split(',')))
 
 
+    def parse_float_list(input_):
+        if input_ is None:
+            return []
+        return list(map(float, input_.split(',')))
+
+
     import argparse
 
     parser = argparse.ArgumentParser()
@@ -269,9 +273,9 @@ if __name__ == "__main__":
     parser.add_argument('--fc_size', type=int, default=128, help='Full connected size.')
     parser.add_argument('--drop_out', default=0.0, type=float, help='Drop out for last fc')
     parser.add_argument('--custom_loss', action='store_true', help='Using custom loss')
-    # parser.add_argument('--penalty_ratio', type=float, default=0.03, help='Lambda of custom_loss')
-    parser.add_argument('--c', type=float, default=0.01, help='Lambda of custom_loss word level')
-    parser.add_argument('--d', type=float, default=0.01, help='Lambda of custom_loss sentence level')
+    parser.add_argument('--penalty_ratio', type=parse_float_list, default=[0.01, 0.005], help='Lambda of custom_loss')
+    # parser.add_argument('--c', type=float, default=0.01, help='Lambda of custom_loss word level')
+    # parser.add_argument('--d', type=float, default=0.01, help='Lambda of custom_loss sentence level')
 
     parser.add_argument('--optim', type=str, choices=['adam', 'rmsprop'], default='rmsprop')
 
@@ -287,4 +291,5 @@ if __name__ == "__main__":
     print("training_time", time.time() - begin_time_)
 
     from .run_test import run_test
+
     run_test(save_dir_)

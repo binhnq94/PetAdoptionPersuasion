@@ -191,7 +191,7 @@ def compute_loss_from_att_weights(att_weights):
     return loss
 
 
-def compute_loss(att_weights0, att_weights1, document_lengths):
+def compute_loss_word_level(att_weights0, document_lengths):
     loss_word_levels = compute_loss_from_att_weights(att_weights0)
 
     list_word_levels = []
@@ -202,10 +202,12 @@ def compute_loss(att_weights0, att_weights1, document_lengths):
         pre_index += length
 
     sum_loss_word_levels = torch.cat(list_word_levels)
+    return sum_loss_word_levels
 
-    # loss_sen_levels = self.compute_loss_from_att_weights(att_weights1) + sum_loss_word_levels
-    # return loss_sen_levels.mean()
-    return sum_loss_word_levels.mean(), compute_loss_from_att_weights(att_weights1).mean()
+
+def compute_custom_loss(att_weights0, att_weights1, document_lengths):
+    return compute_loss_word_level(att_weights0, document_lengths).mean(), \
+           compute_loss_from_att_weights(att_weights1).mean()
 
 
 class HierarchicalMultiAttention(nn.Module):
@@ -269,6 +271,6 @@ class HierarchicalMultiAttention(nn.Module):
         final_outputs = self.compute_fc_layers(sents_att)
 
         if self.custom_loss:
-            custom_loss = compute_loss(att_weights_0, att_weights_1, document_lengths)
+            custom_loss = compute_custom_loss(att_weights_0, att_weights_1, document_lengths)
             return final_outputs, custom_loss
         return final_outputs
