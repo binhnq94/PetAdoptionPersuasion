@@ -120,6 +120,7 @@ class LayerTwo(nn.Module):
             MultiAttentionLayer(lstm_hidden_size * 2, attention_size=attention_size,
                                 attention_hops=self.attention_hops[1])
         ])
+        self.use_transformer = use_transformer
         if use_transformer:
             self.transformers = nn.ModuleList([
                 TransformerLayer(lstm_hidden_size * 2),
@@ -187,14 +188,16 @@ class MultiReasoning(nn.Module):
                                   lstm_hidden_size=args.lstm_h_size,
                                   lstm_num_layers=args.lstm_layers,
                                   attention_size=args.att_size,
-                                  custom_loss=args.custom_loss
+                                  custom_loss=args.custom_loss,
+                                  use_transformer=args.use_transformer
                                   )
         self.layer_two = LayerTwo(2 * args.lstm_h_size,
                                   attention_hops=args.att_hops,
                                   lstm_hidden_size=args.lstm_h_size,
                                   lstm_num_layers=args.lstm_layers,
                                   attention_size=args.att_size,
-                                  custom_loss=args.custom_loss
+                                  custom_loss=args.custom_loss,
+                                  use_transformer=args.use_transformer
                                   )
 
         self.drop_out = args.drop_out
