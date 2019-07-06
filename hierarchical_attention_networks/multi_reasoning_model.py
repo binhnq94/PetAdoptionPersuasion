@@ -27,7 +27,7 @@ class LayerOne(nn.Module):
         ])
 
         self.another_att_layer = MultiAttentionLayer(lstm_hidden_size * 2, attention_size=attention_size,
-                                                     attention_hops=self.attention_hops[1])
+                                                     attention_hops=self.attention_hops[2])
 
         self.use_transformer = use_transformer
         if use_transformer:
@@ -181,10 +181,10 @@ class MultiReasoning(nn.Module):
 
     def __init__(self, args, embedding_weight, output_size):
         super(MultiReasoning, self).__init__()
-
+        self.args = args
         self.custom_loss = args.custom_loss
         self.layer_one = LayerOne(args.emb_size, embedding_weight,
-                                  attention_hops=args.att_hops,
+                                  attention_hops=args.att_hops[:3],
                                   lstm_hidden_size=args.lstm_h_size,
                                   lstm_num_layers=args.lstm_layers,
                                   attention_size=args.att_size,
@@ -192,7 +192,7 @@ class MultiReasoning(nn.Module):
                                   use_transformer=args.use_transformer
                                   )
         self.layer_two = LayerTwo(2 * args.lstm_h_size,
-                                  attention_hops=args.att_hops,
+                                  attention_hops=args.att_hops[3:],
                                   lstm_hidden_size=args.lstm_h_size,
                                   lstm_num_layers=args.lstm_layers,
                                   attention_size=args.att_size,
@@ -231,4 +231,23 @@ class MultiReasoning(nn.Module):
 
             custom_loss = torch.stack([custom_loss_layer_one[0], custom_loss_layer_one[1],
                                       custom_loss_layer_one[2], custom_loss_layer_two[0], custom_loss_layer_two[1]])
+            # print((torch.LongTensor(self.args.att_hops) > 1).type(torch.float).tolist())
+            # custom_loss = (torch.LongTensor(self.args.att_hops) > 1).type(torch.float).cuda() * custom_loss
             return final_outputs, custom_loss
+        else:
+            tokens_lstm_layer_one, sentences_present_layer_one, documents_present_layer_one = \
+                self.layer_one(
+                    document,
+                    document_lengths,
+                    sequence_lengths)
+
+            documents_present = self.layer_two(tokens_lstm_layer_one,
+                                                                      sentences_present_layer_one,
+                                                                      documents_present_layer_one, document,
+                                                                      document_lengths, sequence_lengths)
+
+            final_outputs = self.compute_fc_layers(documents_present)
+
+            # print((torch.LongTensor(self.args.att_hops) > 1).type(torch.float).tolist())
+            # custom_loss = (torch.LongTensor(self.args.att_hops) > 1).type(torch.float).cuda() * custom_loss
+            return final_outputs
