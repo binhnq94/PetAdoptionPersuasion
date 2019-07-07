@@ -8,13 +8,6 @@ import random
 from .utils import *
 import time
 
-SEED = 0
-
-np.random.seed(SEED)
-random.seed(SEED)
-torch.manual_seed(SEED)
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
 
 CURRENT_DIR = os.path.dirname(__file__)
 BASENAME_DIR = os.path.basename(CURRENT_DIR)
@@ -258,6 +251,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
+    parser.add_argument('--seed', type=int, default=0)
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument('--count_backward', type=int, default=4)
     parser.add_argument("--epoch", type=int, default=25)
@@ -283,6 +277,15 @@ if __name__ == "__main__":
     parser.add_argument('--use_transformer', action='store_true')
 
     args_ = parser.parse_args()
+
+    SEED = args_.seed
+
+    np.random.seed(SEED)
+    random.seed(SEED)
+    torch.manual_seed(SEED)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
     try:
         begin_time_ = time.time()
         save_dir_ = main(args_)
