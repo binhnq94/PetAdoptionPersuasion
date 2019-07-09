@@ -6,7 +6,7 @@ from sklearn.metrics import classification_report
 from .utils import *
 
 
-BATCH_SIZE = 64
+BATCH_SIZE = 32
 
 
 def key_func(fpath):
