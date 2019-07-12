@@ -9,7 +9,7 @@ from .utils import *
 import time
 
 
-CURRENT_DIR = os.path.dirname(__file__)
+CURRENT_DIR = "/media/binhnq/New Volume1"
 BASENAME_DIR = os.path.basename(CURRENT_DIR)
 
 DEBUG = False

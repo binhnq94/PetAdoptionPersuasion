@@ -4,7 +4,7 @@ from torchtext.vocab import Vectors, GloVe
 import os
 import torch
 
-CURRENT_PATH = os.path.dirname(__file__)
+CURRENT_PATH = "/media/binhnq/New Volume1"
 
 # VERSION_DATA = 'v3'
 # VERSION_DATA = 'v4'
