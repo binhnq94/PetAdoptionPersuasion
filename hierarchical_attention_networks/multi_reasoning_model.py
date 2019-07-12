@@ -343,6 +343,15 @@ class MultiReasoning(nn.Module):
                                         custom_loss=args.custom_loss,
                                         use_transformer=args.use_transformer
                                         )
+
+        self.layer_middle2 = LayerMiddle(2 * args.lstm_h_size,
+                                         attention_hops=args.att_hops[:3],
+                                         lstm_hidden_size=args.lstm_h_size,
+                                         lstm_num_layers=args.lstm_layers,
+                                         attention_size=args.att_size,
+                                         custom_loss=args.custom_loss,
+                                         use_transformer=args.use_transformer
+                                         )
         self.layer_last = LayerLast(2 * args.lstm_h_size,
                                     attention_hops=args.att_hops[3:],
                                     lstm_hidden_size=args.lstm_h_size,
@@ -386,14 +395,24 @@ class MultiReasoning(nn.Module):
                     sequence_lengths)
             list_custom_loss.extend(custom_loss_layer_2)
 
-            documents_present, custom_loss_layer_3 = self.layer_last(tokens_lstm_layer_2,
-                                                                     sentences_present_layer_2,
-                                                                     documents_present_layer_2,
+            tokens_lstm_layer_3, sentences_present_layer_3, documents_present_layer_3, custom_loss_layer_3 = \
+                self.layer_middle2(
+                    tokens_lstm_layer_2,
+                    sentences_present_layer_2,
+                    documents_present_layer_2,
+                    document,
+                    document_lengths,
+                    sequence_lengths)
+            list_custom_loss.extend(custom_loss_layer_3)
+
+            documents_present, custom_loss_layer_4 = self.layer_last(tokens_lstm_layer_3,
+                                                                     sentences_present_layer_3,
+                                                                     documents_present_layer_3,
                                                                      document,
                                                                      document_lengths,
                                                                      sequence_lengths)
 
-            list_custom_loss.extend(custom_loss_layer_3)
+            list_custom_loss.extend(custom_loss_layer_4)
 
             final_outputs = self.compute_fc_layers(documents_present)
 
