@@ -60,7 +60,7 @@ def train_model(model, train_iter, optim, epoch, args):
             if DEBUG:
                 print("cross_entropy_loss", cross_entropy_loss.item(),
                       "custom_loss", custom_loss.tolist())
-            loss = cross_entropy_loss + (torch.Tensor(args.penalty_ratio).cuda() * custom_loss).sum()
+            loss = cross_entropy_loss + custom_loss.sum()
             # print("Here", cross_entropy_loss.tolist(), (torch.Tensor(args.penalty_ratio)*custom_loss).sum())
             # loss = cross_entropy_loss + args.c*custom_loss[0] + args.d*custom_loss[1]
             if torch.isnan(loss).sum() > 0:
@@ -126,7 +126,7 @@ def eval_model(model, data_iter, args):
             # cross_entropy_loss = loss
 
             if model.custom_loss:
-                loss = cross_entropy_loss + (torch.Tensor(args.penalty_ratio).cuda() * custom_loss).sum()
+                loss = cross_entropy_loss + custom_loss.sum()
                 # loss = cross_entropy_loss + args.c * custom_loss[0] + args.d * custom_loss[1]
             else:
                 loss = cross_entropy_loss
@@ -275,6 +275,8 @@ if __name__ == "__main__":
     parser.add_argument('--pretrained', type=str, default=None)
 
     parser.add_argument('--use_transformer', action='store_true')
+    parser.add_argument('--number_layer', type=int, help='number layer of multi_reasoning. min = 2. best at 4',
+                        default=4)
 
     args_ = parser.parse_args()
 

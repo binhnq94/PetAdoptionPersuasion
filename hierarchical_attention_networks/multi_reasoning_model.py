@@ -335,32 +335,21 @@ class MultiReasoning(nn.Module):
                                   custom_loss=args.custom_loss,
                                   use_transformer=args.use_transformer
                                   )
-        self.layer_middle = LayerMiddle(2 * args.lstm_h_size,
-                                        attention_hops=args.att_hops[:3],
-                                        lstm_hidden_size=args.lstm_h_size,
-                                        lstm_num_layers=args.lstm_layers,
-                                        attention_size=args.att_size,
-                                        custom_loss=args.custom_loss,
-                                        use_transformer=args.use_transformer
-                                        )
 
-        self.layer_middle2 = LayerMiddle(2 * args.lstm_h_size,
-                                         attention_hops=args.att_hops[:3],
-                                         lstm_hidden_size=args.lstm_h_size,
-                                         lstm_num_layers=args.lstm_layers,
-                                         attention_size=args.att_size,
-                                         custom_loss=args.custom_loss,
-                                         use_transformer=args.use_transformer
-                                         )
-
-        self.layer_middle3 = LayerMiddle(2 * args.lstm_h_size,
-                                         attention_hops=args.att_hops[:3],
-                                         lstm_hidden_size=args.lstm_h_size,
-                                         lstm_num_layers=args.lstm_layers,
-                                         attention_size=args.att_size,
-                                         custom_loss=args.custom_loss,
-                                         use_transformer=args.use_transformer
-                                         )
+        self.number_layer = args.number_layer
+        assert self.number_layer >= 2
+        if self.number_layer > 2:
+            self.middles = nn.ModuleList([
+                LayerMiddle(2 * args.lstm_h_size,
+                            attention_hops=args.att_hops[:3],
+                            lstm_hidden_size=args.lstm_h_size,
+                            lstm_num_layers=args.lstm_layers,
+                            attention_size=args.att_size,
+                            custom_loss=args.custom_loss,
+                            use_transformer=args.use_transformer
+                            )
+                for _ in range(self.number_layer - 2)
+            ])
 
         self.layer_last = LayerLast(2 * args.lstm_h_size,
                                     attention_hops=args.att_hops[3:],
@@ -387,56 +376,43 @@ class MultiReasoning(nn.Module):
 
     def forward(self, document, document_lengths, sequence_lengths):
         if self.custom_loss:
+
+            penalties = torch.Tensor(self.args.penalty_ratio[:-2]).cuda()
+
             list_custom_loss = []
-            tokens_lstm_layer_1, sentences_present_layer_1, documents_present_layer_1, custom_loss_layer_1 = \
+            tokens_lstm_pre, sentences_present_pre, documents_present_pre, custom_loss_pre = \
                 self.layer_one(
                     document,
                     document_lengths,
                     sequence_lengths)
-            list_custom_loss.extend(custom_loss_layer_1)
+            list_custom_loss.append(penalties * torch.stack(custom_loss_pre))
 
-            tokens_lstm_layer_2, sentences_present_layer_2, documents_present_layer_2, custom_loss_layer_2 = \
-                self.layer_middle(
-                    tokens_lstm_layer_1,
-                    sentences_present_layer_1,
-                    documents_present_layer_1,
-                    document,
-                    document_lengths,
-                    sequence_lengths)
-            list_custom_loss.extend(custom_loss_layer_2)
+            if self.number_layer > 2:
+                for midle_layer in self.middles:
+                    tokens_lstm_pre, sentences_present_pre, documents_present_pre, custom_loss_pre = \
+                        midle_layer(
+                            tokens_lstm_pre,
+                            sentences_present_pre,
+                            documents_present_pre,
+                            document,
+                            document_lengths,
+                            sequence_lengths)
+                    list_custom_loss.append(penalties * torch.stack(custom_loss_pre))
 
-            tokens_lstm_layer_3, sentences_present_layer_3, documents_present_layer_3, custom_loss_layer_3 = \
-                self.layer_middle2(
-                    tokens_lstm_layer_2,
-                    sentences_present_layer_2,
-                    documents_present_layer_2,
-                    document,
-                    document_lengths,
-                    sequence_lengths)
-            list_custom_loss.extend(custom_loss_layer_3)
-
-            tokens_lstm_layer_4, sentences_present_layer_4, documents_present_layer_4, custom_loss_layer_4 = \
-                self.layer_middle3(
-                    tokens_lstm_layer_3,
-                    sentences_present_layer_3,
-                    documents_present_layer_3,
-                    document,
-                    document_lengths,
-                    sequence_lengths)
-            list_custom_loss.extend(custom_loss_layer_4)
-
-            documents_present, custom_loss_last = self.layer_last(tokens_lstm_layer_4,
-                                                                  sentences_present_layer_4,
-                                                                  documents_present_layer_4,
+            documents_present, custom_loss_last = self.layer_last(tokens_lstm_pre,
+                                                                  sentences_present_pre,
+                                                                  documents_present_pre,
                                                                   document,
                                                                   document_lengths,
                                                                   sequence_lengths)
 
-            list_custom_loss.extend(custom_loss_last)
+            list_custom_loss.append(torch.Tensor(self.args.penalty_ratio[-2:]).cuda() * torch.stack(custom_loss_last))
 
             final_outputs = self.compute_fc_layers(documents_present)
 
-            custom_loss = torch.stack(list_custom_loss)
+            custom_loss = torch.cat(list_custom_loss)
+
+            assert len(custom_loss) == ((self.number_layer-1) * 3 + 2) and len(custom_loss.shape) == 1
             # print((torch.LongTensor(self.args.att_hops) > 1).type(torch.float).tolist())
             # custom_loss = (torch.LongTensor(self.args.att_hops) > 1).type(torch.float).cuda() * custom_loss
             return final_outputs, custom_loss
