@@ -417,16 +417,29 @@ class MultiReasoning(nn.Module):
             # custom_loss = (torch.LongTensor(self.args.att_hops) > 1).type(torch.float).cuda() * custom_loss
             return final_outputs, custom_loss
         else:
-            tokens_lstm_layer_one, sentences_present_layer_one, documents_present_layer_one = \
+            tokens_lstm_pre, sentences_present_pre, documents_present_pre = \
                 self.layer_one(
                     document,
                     document_lengths,
                     sequence_lengths)
 
-            documents_present = self.layer_last(tokens_lstm_layer_one,
-                                                sentences_present_layer_one,
-                                                documents_present_layer_one, document,
-                                                document_lengths, sequence_lengths)
+            if self.number_layer > 2:
+                for midle_layer in self.middles:
+                    tokens_lstm_pre, sentences_present_pre, documents_present_pre = \
+                        midle_layer(
+                            tokens_lstm_pre,
+                            sentences_present_pre,
+                            documents_present_pre,
+                            document,
+                            document_lengths,
+                            sequence_lengths)
+
+            documents_present = self.layer_last(tokens_lstm_pre,
+                                                sentences_present_pre,
+                                                documents_present_pre,
+                                                document,
+                                                document_lengths,
+                                                sequence_lengths)
 
             final_outputs = self.compute_fc_layers(documents_present)
 
