@@ -366,13 +366,11 @@ class MultiReasoning(nn.Module):
         self.fc_layer = nn.Linear(2 * args.lstm_h_size, args.fc_size)
         self.final_linear = nn.Linear(args.fc_size, output_size)
 
-        self.penalty_ratio_middle = torch.Tensor(self.filter_by_attention_hops(self.args.penalty_ratio[:3],
-                                                                               self.args.att_hops[:3],
-                                                                               check=True)).cuda()
+        self.penalty_ratio_middle = torch.Tensor(self.filter_by_penalty(self.args.penalty_ratio[:3],
+                                                                        self.args.penalty_ratio[:3])).cuda()
         print('LEN penalty_ratio_middle', self.penalty_ratio_middle)
-        self.penalty_ratio_last = torch.Tensor(self.filter_by_attention_hops(self.args.penalty_ratio[3:],
-                                                                             self.args.att_hops[3:],
-                                                                             check=True)).cuda()
+        self.penalty_ratio_last = torch.Tensor(self.filter_by_penalty(self.args.penalty_ratio[3:],
+                                                                      self.args.penalty_ratio[3:])).cuda()
         print('LEN penalty_ratio_last', self.penalty_ratio_last)
 
     def compute_fc_layers(self, x):
@@ -384,18 +382,11 @@ class MultiReasoning(nn.Module):
         return x
 
     @staticmethod
-    def filter_by_attention_hops(values, att_hops, check=False):
+    def filter_by_penalty(values, penalties):
         outs = []
         for i, v in enumerate(values):
-            if not check:
-                if att_hops[i] > 1:
-                    outs.append(v)
-            else:
-                if att_hops[i] > 1:
-                    assert v > 0
-                    outs.append(v)
-                else:
-                    assert v == 0
+            if penalties[i] > 0:
+                outs.append(v)
         return outs
 
     def forward(self, document, document_lengths, sequence_lengths):
@@ -407,7 +398,7 @@ class MultiReasoning(nn.Module):
                     document_lengths,
                     sequence_lengths)
             if len(self.penalty_ratio_middle) > 0:
-                custom_loss_pre = self.filter_by_attention_hops(custom_loss_pre, self.args.att_hops[:3])
+                custom_loss_pre = self.filter_by_penalty(custom_loss_pre, self.args.penalty_ratio[:3])
                 list_custom_loss.append(self.penalty_ratio_middle * torch.stack(custom_loss_pre))
 
             if self.number_layer > 2:
@@ -421,7 +412,7 @@ class MultiReasoning(nn.Module):
                             document_lengths,
                             sequence_lengths)
                     if len(self.penalty_ratio_middle) > 0:
-                        custom_loss_pre = self.filter_by_attention_hops(custom_loss_pre, self.args.att_hops[:3])
+                        custom_loss_pre = self.filter_by_penalty(custom_loss_pre, self.args.penalty_ratio[:3])
                         list_custom_loss.append(self.penalty_ratio_middle * torch.stack(custom_loss_pre))
 
             documents_present, custom_loss_last = self.layer_last(tokens_lstm_pre,
@@ -432,7 +423,7 @@ class MultiReasoning(nn.Module):
                                                                   sequence_lengths)
 
             if len(self.penalty_ratio_last) > 0:
-                custom_loss_last = self.filter_by_attention_hops(custom_loss_last, self.args.att_hops[3:])
+                custom_loss_last = self.filter_by_penalty(custom_loss_last, self.args.penalty_ratio[3:])
                 list_custom_loss.append(self.penalty_ratio_last * torch.stack(custom_loss_last))
 
             final_outputs = self.compute_fc_layers(documents_present)
@@ -440,7 +431,7 @@ class MultiReasoning(nn.Module):
             custom_loss = torch.cat(list_custom_loss)
 
             # assert len(custom_loss) == ((self.number_layer-1) * 3 + 2) and len(custom_loss.shape) == 1
-            assert len(custom_loss) == ((self.number_layer-1) * len(self.penalty_ratio_middle) +
+            assert len(custom_loss) == ((self.number_layer - 1) * len(self.penalty_ratio_middle) +
                                         len(self.penalty_ratio_last)) and len(custom_loss.shape) == 1
 
             return final_outputs, custom_loss
