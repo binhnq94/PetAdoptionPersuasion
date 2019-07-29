@@ -278,6 +278,9 @@ if __name__ == "__main__":
     parser.add_argument('--number_layer', type=int, help='number layer of multi_reasoning. min = 2. best at 4',
                         default=4)
 
+    parser.add_argument('--no_word_connect', action='store_true', help='remove word connect on multi reasoning.')
+    parser.add_argument('--no_sen_connect', action='store_true', help='remove sen connect on multi reasoning.')
+
     args_ = parser.parse_args()
 
     SEED = args_.seed

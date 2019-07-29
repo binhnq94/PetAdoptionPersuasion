@@ -138,9 +138,13 @@ class LayerOne(nn.Module):
 class LayerMiddle(nn.Module):
     def __init__(self, input_size, attention_hops, lstm_hidden_size=256,
                  lstm_num_layers=1, attention_size=64,
-                 custom_loss=False, use_transformer=False
+                 custom_loss=False, use_transformer=False,
+                 word_connect=True, sen_connect=True
                  ):
         super(LayerMiddle, self).__init__()
+        self.word_connect = word_connect
+        self.sen_connect = sen_connect
+        print('word_connect', word_connect, 'sen_connect', sen_connect)
         self.custom_loss = custom_loss
         self.attention_hops = attention_hops
         self.lstm_hidden_size = lstm_hidden_size
@@ -170,8 +174,9 @@ class LayerMiddle(nn.Module):
 
         tokens_lstm = self.lstm_layers[0](tokens_lstm_pre_layer, flat_sequence_lengths)
 
-        # TODO: element-wise product tokens_att_layer_one and tokens_lstm
-        tokens_lstm = tokens_lstm * sentences_present_pre_layer.unsqueeze(1)
+        if self.word_connect:
+            # TODO: element-wise product tokens_att_layer_one and tokens_lstm
+            tokens_lstm = tokens_lstm * sentences_present_pre_layer.unsqueeze(1)
 
         # TODO: attention front of product???
         if self.use_transformer:
@@ -190,8 +195,9 @@ class LayerMiddle(nn.Module):
     def document_level(self, sentences_present, documents_present_pre_layer, document_lengths):
         sents_lstm = self.lstm_layers[1](sentences_present, document_lengths)
 
-        # TODO: element-wise product sents_lstm and sents_att_layer_one
-        sents_lstm = sents_lstm * documents_present_pre_layer.unsqueeze(1)
+        if self.sen_connect:
+            # TODO: element-wise product sents_lstm and sents_att_layer_one
+            sents_lstm = sents_lstm * documents_present_pre_layer.unsqueeze(1)
 
         if self.use_transformer:
             sents_lstm = self.transformers[1](sents_lstm, document_lengths)
@@ -236,9 +242,14 @@ class LayerLast(nn.Module):
 
     def __init__(self, input_size, attention_hops, lstm_hidden_size=256,
                  lstm_num_layers=1, attention_size=64,
-                 custom_loss=False, use_transformer=False
+                 custom_loss=False, use_transformer=False,
+                 word_connect=True, sen_connect=True
                  ):
         super(LayerLast, self).__init__()
+        self.word_connect = word_connect
+        self.sen_connect = sen_connect
+        print('word_connect', word_connect, 'sen_connect', sen_connect)
+
         self.custom_loss = custom_loss
         self.attention_hops = attention_hops
         self.lstm_hidden_size = lstm_hidden_size
@@ -263,8 +274,9 @@ class LayerLast(nn.Module):
                        document_lengths, origin_shape):
         tokens_lstm = self.lstm_layers[0](tokens_lstm_pre_layer, flat_sequence_lengths)
 
-        # TODO: element-wise product tokens_att_layer_one and tokens_lstm
-        tokens_lstm = tokens_lstm * sentences_present_pre_layer.unsqueeze(1)
+        if self.word_connect:
+            # TODO: element-wise product tokens_att_layer_one and tokens_lstm
+            tokens_lstm = tokens_lstm * sentences_present_pre_layer.unsqueeze(1)
 
         # TODO: attention front of product???
         if self.use_transformer:
@@ -280,8 +292,9 @@ class LayerLast(nn.Module):
     def document_level(self, sentences_present, documents_present_pre_layer, document_lengths):
         sents_lstm = self.lstm_layers[1](sentences_present, document_lengths)
 
-        # TODO: element-wise product sents_lstm and sents_att_layer_one
-        sents_lstm = sents_lstm * documents_present_pre_layer.unsqueeze(1)
+        if self.sen_connect:
+            # TODO: element-wise product sents_lstm and sents_att_layer_one
+            sents_lstm = sents_lstm * documents_present_pre_layer.unsqueeze(1)
 
         if self.use_transformer:
             sents_lstm = self.transformers[1](sents_lstm, document_lengths)
@@ -346,7 +359,9 @@ class MultiReasoning(nn.Module):
                             lstm_num_layers=args.lstm_layers,
                             attention_size=args.att_size,
                             custom_loss=args.custom_loss,
-                            use_transformer=args.use_transformer
+                            use_transformer=args.use_transformer,
+                            word_connect=not self.args.no_word_connect,
+                            sen_connect=not self.args.no_sen_connect
                             )
                 for _ in range(self.number_layer - 2)
             ])
@@ -357,7 +372,9 @@ class MultiReasoning(nn.Module):
                                     lstm_num_layers=args.lstm_layers,
                                     attention_size=args.att_size,
                                     custom_loss=args.custom_loss,
-                                    use_transformer=args.use_transformer
+                                    use_transformer=args.use_transformer,
+                                    word_connect=not self.args.no_word_connect,
+                                    sen_connect=not self.args.no_sen_connect
                                     )
 
         self.drop_out = args.drop_out
