@@ -70,39 +70,6 @@ def loss_fn(prediction, target):
     return F.cross_entropy(prediction, target)
 
 
-def eval_model(model, val_iter):
-    total_epoch_loss = 0
-    # total_epoch_acc = 0
-
-    count_true = 0
-    count_all = 0
-
-    model.eval()
-    with torch.no_grad():
-        for idx, batch in enumerate(val_iter):
-            text, lengths = batch.text
-            # if (text.size()[0] is not 32):
-            #     continue
-            target = batch.label
-            target = torch.autograd.Variable(target).long()
-            if torch.cuda.is_available():
-                text = text.cuda()
-                lengths = lengths.cuda()
-                target = target.cuda()
-            # prediction = model(text, lengths, len(batch))
-            prediction = model(text)
-            loss = loss_fn(prediction, target)
-            num_corrects = (torch.max(prediction, 1)[1].view(target.size()).data == target.data).sum()
-            # acc = 100.0 * num_corrects/len(batch)
-            total_epoch_loss += loss.item()
-            # total_epoch_acc += acc.item()
-            count_true += num_corrects.item()
-            count_all += len(batch)
-
-    # return total_epoch_loss/len(val_iter), total_epoch_acc/len(val_iter)
-    return total_epoch_loss/len(val_iter), count_true/count_all
-
-
 def eval_model(model, test_iter):
     total_epoch_loss = 0
 
