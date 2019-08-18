@@ -2,12 +2,7 @@ import numpy as np
 import torch
 import os
 import pickle
-
-DATA_VERSION = 'v2'
-DATA_DIR = 'datasets/190524'
-train_path = f'converted-{DATA_VERSION}_train.csv'
-validation_path = f'converted-{DATA_VERSION}_val.csv'
-test_path = f'converted-{DATA_VERSION}_test.csv'
+from .file_utils import DATA_VERSION, train_path, validation_path, test_path, DATA_DIR, CURRENT_DIR
 
 
 def get_w2v(embedding_length=200):
@@ -35,12 +30,12 @@ def read_data(fpath: str):
             line = line.strip('\n')
             if line:
                 _id, sentence, label = line.split('\t')
-                data.append(sentence)
+                data.append(sentence.lower())
     return data
 
 
 def save_vectors(fpath):
-    out_path = f"{fpath}.w2v"
+    out_path = os.path.join(CURRENT_DIR, 'resources', f"{fpath}.w2v")
     fpath = os.path.join(DATA_DIR, fpath)
     data = read_data(fpath)
     vectors = []
@@ -57,6 +52,22 @@ def convert_data2vectors():
     save_vectors(train_path)
     save_vectors(validation_path)
     save_vectors(test_path)
+
+
+def load_w2v(kind='train'):
+
+    if kind == 'train':
+        fpath = train_path
+    elif kind == 'val':
+        fpath = validation_path
+    elif kind == 'test':
+        fpath = test_path
+    else:
+        raise ValueError
+
+    w2v_path = os.path.join(CURRENT_DIR, 'resources', f"{fpath}.w2v.npy")
+
+    return np.load(w2v_path)
 
 
 if __name__ == '__main__':
