@@ -100,7 +100,7 @@ def eval_model(model, test_iter):
 
             total_epoch_loss += loss.item()
 
-            y_prediction.extend(torch.max(prediction, 1)[1].view(target.size()).tolist())
+            y_prediction.extend(predict(prediction).view(target.size()).tolist())
             y_gt.extend(target.tolist())
 
             count_true += num_corrects.item()
@@ -140,8 +140,8 @@ def main(args):
     torch.device('cuda:0')
 
     model = LogisticRegression(args, word_embeddings, output_size)
-    # optim = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()))
-    optim = torch.optim.SGD(model.parameters(), lr=0.01)
+    optim = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()))
+    # optim = torch.optim.SGD(filter(lambda p: p.requires_grad, model.parameters()), lr=0.01)
     if torch.cuda.is_available():
         model.cuda()
 
@@ -176,6 +176,8 @@ if __name__ == "__main__":
 
     parser.add_argument('--model', type=str, choices=['logistic_regression'], default='logistic_regression')
     parser.add_argument("--emb_size", type=int, default=200, help='Embedding size')
+    parser.add_argument("--binary", action='store_true', help='Whether use binary features or not')
+
     parser.add_argument('--pretrained', type=str, default=None)
 
     args_ = parser.parse_args()
