@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.autograd import Variable
+from flair.data import Sentence
 import math
 
 
@@ -51,8 +52,12 @@ class LstmLayer(nn.Module):
         self.lstm = nn.LSTM(input_size, hidden_size, num_layers=num_layers, bidirectional=True, batch_first=True)
 
     def init_hidden(self, batch_size):
-        h_0 = Variable(torch.zeros(self.num_layers * 2, batch_size, self.hidden_size).cuda())
-        c_0 = Variable(torch.zeros(self.num_layers * 2, batch_size, self.hidden_size).cuda())
+        if torch.cuda.is_available():
+            h_0 = Variable(torch.zeros(self.num_layers * 2, batch_size, self.hidden_size).cuda())
+            c_0 = Variable(torch.zeros(self.num_layers * 2, batch_size, self.hidden_size).cuda())
+        else:
+            h_0 = Variable(torch.zeros(self.num_layers * 2, batch_size, self.hidden_size))
+            c_0 = Variable(torch.zeros(self.num_layers * 2, batch_size, self.hidden_size))
         return h_0, c_0
 
     def forward(self, sequence_input, seq_lengths):
@@ -68,7 +73,9 @@ class LstmLayer(nn.Module):
         sorted_seq_lengths, argsort_lengths = seq_lengths.sort(0, descending=True)
 
         # invert_argsort_lengths = torch.LongTensor(argsort_lengths.shape).fill_(0).to(self.device)
-        invert_argsort_lengths = torch.LongTensor(argsort_lengths.shape).fill_(0).cuda()
+        invert_argsort_lengths = torch.LongTensor(argsort_lengths.shape).fill_(0)
+        if torch.cuda.is_available():
+            invert_argsort_lengths = invert_argsort_lengths.cuda()
         for i, v in enumerate(argsort_lengths):
             invert_argsort_lengths[v.data] = i
 
@@ -88,7 +95,9 @@ class LstmLayer(nn.Module):
 def make_tokens_att_full(tokens_att, document_lengths, batch_size, max_sent):
     """Padding to all document have same len."""
     # print("tokens_att.shape", tokens_att.shape)
-    out_tokens_att = torch.zeros(batch_size, max_sent, tokens_att.shape[-1]).cuda()
+    out_tokens_att = torch.zeros(batch_size, max_sent, tokens_att.shape[-1])
+    if torch.cuda.is_available():
+        out_tokens_att = out_tokens_att.cuda()
     # print("out_tokens.shape", out_tokens_att.shape)
 
     # print(document_lengths.tolist())
@@ -180,7 +189,11 @@ class MultiAttentionLayer(nn.Module):
         x = self.linear_second(x)  # [bsize, max_len, att_hops]
         attention = x.transpose(1, 2)  # [bsize, att_hops, max_len]
 
-        mask = torch.arange(max_len).cuda().expand(batch_size, max_len) < lengths.unsqueeze(1)
+        if torch.cuda.is_available():
+            mask = torch.arange(max_len).cuda().expand(batch_size, max_len) < lengths.unsqueeze(1)
+        else:
+            mask = torch.arange(max_len).expand(batch_size, max_len) < lengths.unsqueeze(1)
+
         mask = mask.unsqueeze(1).repeat(1, self.attention_hops, 1)
         attention[~mask] = -float('inf')
 
@@ -217,16 +230,46 @@ def compute_custom_loss(att_weights0, att_weights1, document_lengths):
            compute_loss_from_att_weights(att_weights1).mean()
 
 
+from flair.embeddings import BertEmbeddings
+BERT_EMB = BertEmbeddings()
+BERT_EMB.cpu()
+
+
 class HierarchicalMultiAttention(nn.Module):
 
     def __init__(self, output_size, embedding_size, embedding_weight, attention_hops, lstm_hidden_size=256,
                  lstm_num_layers=1, attention_size=64, fc_size=128, drop_out=0, custom_loss=False,
-                 use_transformer=False):
-        super(HierarchicalMultiAttention, self).__init__()
+                 use_transformer=False, bert=None, itos=None):
+        """
+
+        :param output_size:
+        :param embedding_size:
+        :param embedding_weight:
+        :param attention_hops:
+        :param lstm_hidden_size:
+        :param lstm_num_layers:
+        :param attention_size:
+        :param fc_size:
+        :param drop_out:
+        :param custom_loss:
+        :param bert: bert embedding.
+        """
+        super(HierarchicalAttention, self).__init__()
         self.custom_loss = custom_loss
         self.attention_hops = attention_hops
         self.lstm_hidden_size = lstm_hidden_size
-        self.word_embeddings = nn.Embedding.from_pretrained(embedding_weight)
+
+        self.use_embedding_weight = True if embedding_weight is not None else False
+        if self.use_embedding_weight:
+            self.word_embeddings = nn.Embedding.from_pretrained(embedding_weight)
+
+        self.use_bert = True if bert is not None else False
+        if self.use_bert:
+            # self.bert = [bert]
+            self.itos = itos
+            # embedding_size = self.bert[0].embedding_length
+            embedding_size = BERT_EMB.embedding_length
+
         self.lstm_layers = nn.ModuleList([
             LstmLayer(embedding_size, lstm_hidden_size, num_layers=lstm_num_layers),
             LstmLayer(2 * lstm_hidden_size, lstm_hidden_size, num_layers=lstm_num_layers)
@@ -257,6 +300,74 @@ class HierarchicalMultiAttention(nn.Module):
         x = self.final_linear(x)
         return x
 
+    def bert_embedding(self, x):
+        """
+
+        :param x: [num_sen, max_word]
+        :return:
+        """
+        out_embeddings = torch.zeros((x.shape[0], x.shape[1], BERT_EMB.embedding_length))
+        if torch.cuda.is_available():
+            out_embeddings = out_embeddings.cuda()
+
+        list_sentence = []
+
+        for sen in x:
+            sen = sen.tolist()
+
+            out_sen = []
+            for w in sen:
+                out_w = self.itos[w]
+                if out_w != '<pad>':
+                    out_sen.append(out_w)
+            if out_sen:
+                out_sen = ' '.join(out_sen)
+                # print(out_sen)
+
+                out_sen = Sentence(out_sen)
+                list_sentence.append(out_sen)
+
+        # count = 8
+        count = 4
+        for i in range(len(list_sentence) // count):
+            # self.bert.embed(list_sentence[i * count: (i+1) * count])
+            BERT_EMB.embed(list_sentence[i * count: (i+1) * count])
+
+        if len(list_sentence) % count != 0:
+            # self.bert.embed(list_sentence[(i+1) * count:])
+            BERT_EMB.embed(list_sentence[(i+1) * count:])
+
+        # try:
+        #     # BERT_EMB.cpu()
+        #     BERT_EMB.embed(list_sentence)
+        # except Exception as e:
+        #     print(list_sentence)
+        #     raise e
+
+        for sen_idx, sen in enumerate(list_sentence):
+            # print(sen)
+            try:
+                # self.bert[0].embed(sen)
+                # BERT_EMB.embed(sen)
+                sen_embedding = torch.stack([token.embedding for token in sen], dim=0).cuda()
+                out_embeddings[sen_idx][:sen_embedding.shape[0]] = sen_embedding
+            except Exception as e:
+                print(sen)
+                raise e
+
+        # if torch.cuda.is_available():
+        #     out_embeddings = out_embeddings.cuda()
+
+        return out_embeddings
+
+    def do_embedding(self, x):
+        if self.use_embedding_weight:
+            return self.word_embeddings(x)
+        elif self.use_bert:
+            return self.bert_embedding(x)
+        else:
+            raise NotImplementedError()
+
     def forward(self, document, document_lengths, sequence_lengths):
         """
 
@@ -270,7 +381,7 @@ class HierarchicalMultiAttention(nn.Module):
         flat_sequence_lengths = sequence_lengths.view(-1)
 
         flat_document, flat_sequence_lengths = filter_sents(flat_document, flat_sequence_lengths)
-        flat_emb_document = self.word_embeddings(flat_document)
+        flat_emb_document = self.do_embedding(flat_document)
 
         tokens_lstm = self.lstm_layers[0](flat_emb_document, flat_sequence_lengths)
         if self.use_transformer:

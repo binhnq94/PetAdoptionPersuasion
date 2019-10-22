@@ -25,7 +25,7 @@ def sent_tokenize(x):
 
 
 def tokenize(x):
-    return x.split()
+    return x.split()[:200]
 
 
 # TODO make for test, only load test file.
@@ -51,7 +51,11 @@ def load_data(train_bsize=32, bsize=64, embedding_length=200):
     )
 
     if not os.path.exists(document_field_file):
-        document.build_vocab(train_data, val_data, test_data, vectors=GloVe(name='6B', dim=embedding_length))
+        if embedding_length > 0:
+            document.build_vocab(train_data, val_data, test_data, vectors=GloVe(name='6B', dim=embedding_length))
+        else:
+            document.build_vocab(train_data, val_data, test_data)
+
         label.build_vocab(train_data, val_data, test_data)
 
         print(f'Saving document field to {document_field_file}')
@@ -60,7 +64,8 @@ def load_data(train_bsize=32, bsize=64, embedding_length=200):
 
     word_embeddings = document.vocab.vectors
     print("Length of Text Vocabulary: " + str(len(document.vocab)))
-    print("Vector size of Text Vocabulary: ", document.vocab.vectors.size())
+    if embedding_length > 0:
+        print("Vector size of Text Vocabulary: ", document.vocab.vectors.size())
     print("Label Length: " + str(len(label.vocab)))
 
     train_iter, valid_iter, test_iter = data.BucketIterator.splits(

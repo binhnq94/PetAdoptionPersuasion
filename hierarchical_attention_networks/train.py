@@ -39,11 +39,15 @@ def train_model(model, train_iter, optim, epoch, args):
     count_true = 0
     count_all = 0
 
-    model.cuda()
+    _begin_time = time.time()
+
+    # model.cuda()
     model.train()
     # count_backward = args.count_backward
     count_backward = 0
     optim.zero_grad()
+
+    print('Number step', len(train_iter))
 
     for idx, batch in enumerate(train_iter):
         document, document_lengths, sent_lengths, target = get_data_from_batch(batch)
@@ -97,6 +101,7 @@ def train_model(model, train_iter, optim, epoch, args):
                 print("DEBUG", "cross_entropy_loss", cross_entropy_loss.item())
             print(f'Epoch: {epoch + 1}, Idx: {idx + 1}, Training Loss: {loss.item():.4f}, '
                   f'Training Accuracy: {count_true / count_all: .4f}%')
+            print('Time', (time.time() - _begin_time)/(idx+1))
 
     return total_epoch_loss / len(train_iter), count_true / count_all
 
@@ -114,6 +119,8 @@ def eval_model(model, data_iter, args):
     count_true = 0
     count_all = 0
 
+    _begin_time = time.time()
+    print('eval_len', len(data_iter))
     model.eval()
     with torch.no_grad():
         for idx, batch in enumerate(data_iter):
@@ -140,6 +147,8 @@ def eval_model(model, data_iter, args):
 
             count_true += num_corrects.item()
             count_all += len(batch)
+            if (idx + 1) % (len(data_iter) // 10) == 0:
+                print('Time', (time.time() - _begin_time) / (idx + 1))
 
     # return total_epoch_loss/len(val_iter), total_epoch_acc/len(val_iter)
     return total_epoch_loss / len(data_iter), count_true / count_all, y_gt, y_prediction
@@ -156,8 +165,10 @@ def prepare_save_dir(args):
     return save_dir
 
 
-def prepare_model(args, output_size, word_embeddings):
+def prepare_model(args, output_size, word_embeddings, use_bert, itos):
     if args.model == 'hierarchical':
+        if use_bert is True:
+            raise NotImplementedError()
         from .model import HierarchicalAttention
         model = HierarchicalAttention(output_size=output_size,
                                       embedding_size=args.emb_size,
@@ -165,6 +176,14 @@ def prepare_model(args, output_size, word_embeddings):
                                       lstm_hidden_size=args.lstm_h_size)
     elif args.model == 'multi_att':
         from .model import HierarchicalMultiAttention
+
+        if use_bert:
+            print("USE BERT")
+            # bert_emb = BERT_EMB
+            bert_emb = True
+        else:
+            bert_emb = None
+
         model = HierarchicalMultiAttention(output_size=output_size,
                                            embedding_size=args.emb_size,
                                            embedding_weight=word_embeddings,
@@ -175,7 +194,9 @@ def prepare_model(args, output_size, word_embeddings):
                                            attention_hops=args.att_hops,
                                            fc_size=args.fc_size,
                                            drop_out=args.drop_out,
-                                           use_transformer=args.use_transformer)
+                                           use_transformer=args.use_transformer,
+                                           bert=bert_emb,
+                                           itos=itos)
     elif args.model == 'multi_reasoning':
         from .multi_reasoning_model import MultiReasoning
         model = MultiReasoning(output_size=output_size,
@@ -197,16 +218,16 @@ def main(args):
     save_dir = prepare_save_dir(args)
     output_size = 2
 
-    TEXT, LABEL, vocab_size, word_embeddings, \
+    DOCUMENT, LABEL, vocab_size, word_embeddings, \
     train_iter, valid_iter, test_iter = load_data(train_bsize=args.batch_size,
-                                                  bsize=args.batch_size * 2,
+                                                  bsize=args.batch_size * 2 if not args.use_bert else args.batch_size,
                                                   embedding_length=args.emb_size)
     print('LABEL.vocab.stoi', LABEL.vocab.stoi)
 
     # LOAD MODEL
     torch.device('cuda:0')
 
-    model, optim = prepare_model(args, output_size, word_embeddings)
+    model, optim = prepare_model(args, output_size, word_embeddings, args.use_bert, DOCUMENT.vocab.itos)
     print("state_dict", list(model.state_dict()))
 
     if torch.cuda.is_available():
@@ -269,6 +290,8 @@ if __name__ == "__main__":
     parser.add_argument('--penalty_ratio', type=parse_float_list, default=[0.01, 0.005], help='Lambda of custom_loss')
     # parser.add_argument('--c', type=float, default=0.01, help='Lambda of custom_loss word level')
     # parser.add_argument('--d', type=float, default=0.01, help='Lambda of custom_loss sentence level')
+
+    parser.add_argument('--use_bert', action='store_true', help='Use bert')
 
     parser.add_argument('--optim', type=str, choices=['adam', 'rmsprop'], default='rmsprop')
 
