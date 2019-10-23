@@ -8,17 +8,9 @@ import random
 from .utils import *
 import time
 
-SEED = 0
 
-np.random.seed(SEED)
-random.seed(SEED)
-torch.manual_seed(SEED)
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
-
-CURRENT_DIR = os.path.dirname(__file__)
+CURRENT_DIR = "/media/binhnq/New Volume1"
 BASENAME_DIR = os.path.basename(CURRENT_DIR)
-
 
 DEBUG = False
 
@@ -47,11 +39,15 @@ def train_model(model, train_iter, optim, epoch, args):
     count_true = 0
     count_all = 0
 
-    model.cuda()
+    _begin_time = time.time()
+
+    # model.cuda()
     model.train()
     # count_backward = args.count_backward
     count_backward = 0
     optim.zero_grad()
+
+    print('Number step', len(train_iter))
 
     for idx, batch in enumerate(train_iter):
         document, document_lengths, sent_lengths, target = get_data_from_batch(batch)
@@ -67,14 +63,13 @@ def train_model(model, train_iter, optim, epoch, args):
         if model.custom_loss:
             if DEBUG:
                 print("cross_entropy_loss", cross_entropy_loss.item(),
-                      "custom_loss_word", custom_loss[0].item(),
-                      "custom_loss_sen", custom_loss[1].item())
-            # loss = loss + penalty_ratio*custom_loss
-            loss = cross_entropy_loss + args.c*custom_loss[0] + args.d*custom_loss[1]
+                      "custom_loss", custom_loss.tolist())
+            loss = cross_entropy_loss + custom_loss.sum()
+            # print("Here", cross_entropy_loss.tolist(), (torch.Tensor(args.penalty_ratio)*custom_loss).sum())
+            # loss = cross_entropy_loss + args.c*custom_loss[0] + args.d*custom_loss[1]
             if torch.isnan(loss).sum() > 0:
                 print("cross_entropy_loss", cross_entropy_loss.item(),
-                      "custom_loss_word", custom_loss[0].item(),
-                      "custom_loss_sen", custom_loss[1].item())
+                      "custom_loss", custom_loss.tolist())
                 print("document.shape", document.shape)
                 print("document_lengths", document_lengths)
                 print("sent_lengths", sent_lengths)
@@ -101,12 +96,12 @@ def train_model(model, train_iter, optim, epoch, args):
             # print("DEBUG:", "cross_entropy_loss", cross_entropy_loss.item(), "custom_loss", custom_loss.item())
             if model.custom_loss:
                 print("DEBUG", "cross_entropy_loss", cross_entropy_loss.item(),
-                      "custom_loss_word", custom_loss[0].item(),
-                      "custom_loss_sen", custom_loss[1].item())
+                      "custom_loss", custom_loss.tolist())
             else:
                 print("DEBUG", "cross_entropy_loss", cross_entropy_loss.item())
             print(f'Epoch: {epoch + 1}, Idx: {idx + 1}, Training Loss: {loss.item():.4f}, '
                   f'Training Accuracy: {count_true / count_all: .4f}%')
+            print('Time', (time.time() - _begin_time)/(idx+1))
 
     return total_epoch_loss / len(train_iter), count_true / count_all
 
@@ -124,6 +119,8 @@ def eval_model(model, data_iter, args):
     count_true = 0
     count_all = 0
 
+    _begin_time = time.time()
+    print('eval_len', len(data_iter))
     model.eval()
     with torch.no_grad():
         for idx, batch in enumerate(data_iter):
@@ -136,7 +133,8 @@ def eval_model(model, data_iter, args):
             # cross_entropy_loss = loss
 
             if model.custom_loss:
-                loss = cross_entropy_loss + args.c * custom_loss[0] + args.d * custom_loss[1]
+                loss = cross_entropy_loss + custom_loss.sum()
+                # loss = cross_entropy_loss + args.c * custom_loss[0] + args.d * custom_loss[1]
             else:
                 loss = cross_entropy_loss
 
@@ -149,13 +147,15 @@ def eval_model(model, data_iter, args):
 
             count_true += num_corrects.item()
             count_all += len(batch)
+            if (idx + 1) % (len(data_iter) // 10) == 0:
+                print('Time', (time.time() - _begin_time) / (idx + 1))
 
     # return total_epoch_loss/len(val_iter), total_epoch_acc/len(val_iter)
     return total_epoch_loss / len(data_iter), count_true / count_all, y_gt, y_prediction
 
 
 def prepare_save_dir(args):
-    save_dir = f"{CURRENT_DIR}/models/{args.model}_{datetime.datetime.now().strftime('%y%m%d%-H%M%S'):}"
+    save_dir = f"{CURRENT_DIR}/models/{args.model}_{datetime.datetime.now().strftime('%y%m%d%H%M%S'):}"
     # prepare save_dir
     assert not os.path.exists(save_dir)
     print("SAVE_DIR", save_dir)
@@ -165,8 +165,10 @@ def prepare_save_dir(args):
     return save_dir
 
 
-def prepare_model(args, output_size, word_embeddings):
+def prepare_model(args, output_size, word_embeddings, use_bert, itos):
     if args.model == 'hierarchical':
+        if use_bert is True:
+            raise NotImplementedError()
         from .model import HierarchicalAttention
         model = HierarchicalAttention(output_size=output_size,
                                       embedding_size=args.emb_size,
@@ -174,6 +176,14 @@ def prepare_model(args, output_size, word_embeddings):
                                       lstm_hidden_size=args.lstm_h_size)
     elif args.model == 'multi_att':
         from .model import HierarchicalMultiAttention
+
+        if use_bert:
+            print("USE BERT")
+            # bert_emb = BERT_EMB
+            bert_emb = True
+        else:
+            bert_emb = None
+
         model = HierarchicalMultiAttention(output_size=output_size,
                                            embedding_size=args.emb_size,
                                            embedding_weight=word_embeddings,
@@ -183,7 +193,15 @@ def prepare_model(args, output_size, word_embeddings):
                                            attention_size=args.att_size,
                                            attention_hops=args.att_hops,
                                            fc_size=args.fc_size,
-                                           drop_out=args.drop_out)
+                                           drop_out=args.drop_out,
+                                           use_transformer=args.use_transformer,
+                                           bert=bert_emb,
+                                           itos=itos)
+    elif args.model == 'multi_reasoning':
+        from .multi_reasoning_model import MultiReasoning
+        model = MultiReasoning(output_size=output_size,
+                               embedding_weight=word_embeddings,
+                               args=args)
     else:
         raise ValueError('Model kind = {}'.format(args.model))
 
@@ -196,20 +214,20 @@ def prepare_model(args, output_size, word_embeddings):
 
 def main(args):
     print("args", vars(args))
-    print("real batch_size", args.count_backward*args.batch_size)
+    print("real batch_size", args.count_backward * args.batch_size)
     save_dir = prepare_save_dir(args)
     output_size = 2
 
-    TEXT, LABEL, vocab_size, word_embeddings, \
+    DOCUMENT, LABEL, vocab_size, word_embeddings, \
     train_iter, valid_iter, test_iter = load_data(train_bsize=args.batch_size,
-                                                  bsize=args.batch_size * 2,
+                                                  bsize=args.batch_size * 2 if not args.use_bert else args.batch_size,
                                                   embedding_length=args.emb_size)
     print('LABEL.vocab.stoi', LABEL.vocab.stoi)
 
     # LOAD MODEL
     torch.device('cuda:0')
 
-    model, optim = prepare_model(args, output_size, word_embeddings)
+    model, optim = prepare_model(args, output_size, word_embeddings, args.use_bert, DOCUMENT.vocab.itos)
     print("state_dict", list(model.state_dict()))
 
     if torch.cuda.is_available():
@@ -245,14 +263,22 @@ if __name__ == "__main__":
         return list(map(int, input_.split(',')))
 
 
+    def parse_float_list(input_):
+        if input_ is None:
+            return []
+        return list(map(float, input_.split(',')))
+
+
     import argparse
 
     parser = argparse.ArgumentParser()
+    parser.add_argument('--seed', type=int, default=0)
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument('--count_backward', type=int, default=4)
     parser.add_argument("--epoch", type=int, default=25)
 
-    parser.add_argument('--model', type=str, choices=['hierarchical', 'multi_att'], default='hierarchical')
+    parser.add_argument('--model', type=str, choices=['hierarchical', 'multi_att', 'multi_reasoning'],
+                        default='hierarchical')
     parser.add_argument("--emb_size", type=int, default=200, help='Embedding size')
     parser.add_argument('--lstm_h_size', type=int, default=256, help='LSTM size')
     parser.add_argument('--lstm_layers', type=int, default=1, help='Number of lstm layers')
@@ -261,22 +287,41 @@ if __name__ == "__main__":
     parser.add_argument('--fc_size', type=int, default=128, help='Full connected size.')
     parser.add_argument('--drop_out', default=0.0, type=float, help='Drop out for last fc')
     parser.add_argument('--custom_loss', action='store_true', help='Using custom loss')
-    # parser.add_argument('--penalty_ratio', type=float, default=0.03, help='Lambda of custom_loss')
-    parser.add_argument('--c', type=float, default=0.01, help='Lambda of custom_loss word level')
-    parser.add_argument('--d', type=float, default=0.01, help='Lambda of custom_loss sentence level')
+    parser.add_argument('--penalty_ratio', type=parse_float_list, default=[0.01, 0.005], help='Lambda of custom_loss')
+    # parser.add_argument('--c', type=float, default=0.01, help='Lambda of custom_loss word level')
+    # parser.add_argument('--d', type=float, default=0.01, help='Lambda of custom_loss sentence level')
+
+    parser.add_argument('--use_bert', action='store_true', help='Use bert')
 
     parser.add_argument('--optim', type=str, choices=['adam', 'rmsprop'], default='rmsprop')
 
     parser.add_argument('--pretrained', type=str, default=None)
 
+    parser.add_argument('--use_transformer', action='store_true')
+    parser.add_argument('--number_layer', type=int, help='number layer of multi_reasoning. min = 2. best at 4',
+                        default=4)
+
+    parser.add_argument('--no_word_connect', action='store_true', help='remove word connect on multi reasoning.')
+    parser.add_argument('--no_sen_connect', action='store_true', help='remove sen connect on multi reasoning.')
+
     args_ = parser.parse_args()
+
+    SEED = args_.seed
+
+    np.random.seed(SEED)
+    random.seed(SEED)
+    torch.manual_seed(SEED)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
     try:
-        begin_time = time.time()
+        begin_time_ = time.time()
         save_dir_ = main(args_)
     except KeyboardInterrupt:
-        print("training_time", time.time()-begin_time)
+        pass
 
-    print("training_time", time.time() - begin_time)
+    print("training_time", time.time() - begin_time_)
 
     from .run_test import run_test
+
     run_test(save_dir_)

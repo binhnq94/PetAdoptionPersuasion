@@ -6,7 +6,7 @@ from sklearn.metrics import classification_report
 from .utils import *
 
 
-BATCH_SIZE = 64
+BATCH_SIZE = 32
 
 
 def key_func(fpath):
@@ -45,8 +45,8 @@ def run_test(save_dir):
     print(LABEL.vocab.stoi)
     print(TEXT.vocab.vectors.size())
     state_dict = torch.load(mpath)
-    print(state_dict['word_embeddings.weight'].size())
-    assert state_dict['word_embeddings.weight'].size() == TEXT.vocab.vectors.size()
+    # print(state_dict['word_embeddings.weight'].size())
+    # assert state_dict['word_embeddings.weight'].size() == TEXT.vocab.vectors.size()
 
     print(state_dict.keys())
 
@@ -55,7 +55,12 @@ def run_test(save_dir):
     model.cuda()
     model.load_state_dict(state_dict)
     model.eval()
+    print('test_iter')
     _, _, y_gt, y_prediction = eval_model(model, test_iter, args)
+    print(classification_report(y_gt, y_prediction, digits=4, labels=[0, 1],
+                                target_names=['Adopted', 'Unadopted']))
+    print('val_iter')
+    _, _, y_gt, y_prediction = eval_model(model, valid_iter, args)
     print(classification_report(y_gt, y_prediction, digits=4, labels=[0, 1],
                                 target_names=['Adopted', 'Unadopted']))
 
