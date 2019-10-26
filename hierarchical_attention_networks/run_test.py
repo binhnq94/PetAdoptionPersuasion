@@ -38,19 +38,19 @@ def run_test(save_dir):
 
     batch_size = BATCH_SIZE
     torch.device('cuda:0')
-    TEXT, LABEL, vocab_size, word_embeddings, \
+    DOCUMENT, LABEL, vocab_size, word_embeddings, \
     train_iter, valid_iter, test_iter = load_data(train_bsize=batch_size,
                                                   bsize=batch_size * 2,
                                                   embedding_length=args.emb_size)
     print(LABEL.vocab.stoi)
-    print(TEXT.vocab.vectors.size())
+    print(DOCUMENT.vocab.vectors.size())
     state_dict = torch.load(mpath)
     # print(state_dict['word_embeddings.weight'].size())
     # assert state_dict['word_embeddings.weight'].size() == TEXT.vocab.vectors.size()
 
     print(state_dict.keys())
 
-    model, _ = prepare_model(args, 2, word_embeddings)
+    model, _ = prepare_model(args, 2, word_embeddings, args.use_bert, DOCUMENT.vocab.itos)
 
     model.cuda()
     model.load_state_dict(state_dict)

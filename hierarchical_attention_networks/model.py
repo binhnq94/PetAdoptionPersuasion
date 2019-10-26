@@ -231,7 +231,7 @@ def compute_custom_loss(att_weights0, att_weights1, document_lengths):
 
 
 from flair.embeddings import BertEmbeddings
-BERT_EMB = BertEmbeddings()
+BERT_EMB = BertEmbeddings(layers='-1')
 BERT_EMB.cpu()
 
 
@@ -254,7 +254,7 @@ class HierarchicalMultiAttention(nn.Module):
         :param custom_loss:
         :param bert: bert embedding.
         """
-        super(HierarchicalAttention, self).__init__()
+        super(HierarchicalMultiAttention, self).__init__()
         self.custom_loss = custom_loss
         self.attention_hops = attention_hops
         self.lstm_hidden_size = lstm_hidden_size
@@ -269,6 +269,7 @@ class HierarchicalMultiAttention(nn.Module):
             self.itos = itos
             # embedding_size = self.bert[0].embedding_length
             embedding_size = BERT_EMB.embedding_length
+            print('bert_size', embedding_size)
 
         self.lstm_layers = nn.ModuleList([
             LstmLayer(embedding_size, lstm_hidden_size, num_layers=lstm_num_layers),

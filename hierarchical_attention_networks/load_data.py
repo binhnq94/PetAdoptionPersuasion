@@ -4,7 +4,8 @@ from torchtext.vocab import Vectors, GloVe
 import os
 import torch
 
-CURRENT_PATH = "/media/binhnq/New Volume1"
+# CURRENT_PATH = "/media/binhnq/New Volume1"
+CURRENT_PATH = os.path.dirname(__file__)
 
 # VERSION_DATA = 'v3'
 # VERSION_DATA = 'v4'
@@ -26,6 +27,7 @@ def sent_tokenize(x):
 
 def tokenize(x):
     return x.split()[:200]
+    # return x.split()
 
 
 # TODO make for test, only load test file.
