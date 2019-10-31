@@ -1,18 +1,16 @@
 import torch
-from baseline_bilstm.load_data import load_data
+from baseline.baseline_bilstm import load_data
 import torch.nn.functional as F
 from sklearn.metrics import classification_report
-import os
 import datetime
 import numpy as np
 import random
-from .model import CNN_Text
+from .model import LogisticRegression
 from hierarchical_attention_networks.utils import *
-import time
 
 SEED = 0
 
-CURRENT_DIR = "/media/binhnq/New Volume1"
+CURRENT_DIR = "baseline_logistic_regression/models"
 BASENAME_DIR = os.path.basename(CURRENT_DIR)
 
 DEBUG = False
@@ -22,6 +20,11 @@ def clip_gradient(model, clip_value):
     params = list(filter(lambda p: p.grad is not None, model.parameters()))
     for p in params:
         p.grad.data.clamp_(-clip_value, clip_value)
+
+
+def predict(prediction):
+    # return torch.max(prediction, 1)[1]
+    return (prediction > 0.5).long()
 
 
 def train_model(model, train_iter, epoch, optim):
@@ -42,15 +45,13 @@ def train_model(model, train_iter, epoch, optim):
             text = text.cuda()
             lengths = lengths.cuda()
             target = target.cuda()
-        # if (text.size()[0] is not 32):  # One of the batch returned by BucketIterator has length different than 32.
-        #     continue
+
         optim.zero_grad()
-        # prediction = model(text, lengths, len(batch))
         prediction = model(text)
 
         loss = loss_fn(prediction, target)
-        num_corrects = (torch.max(prediction, 1)[1].view(target.size()).data == target.data).float().sum()
-        # acc = 100.0 * num_corrects / len(batch)
+        num_corrects = (predict(prediction).view(target.size()).data == target.data).float().sum()
+
         loss.backward()
         clip_gradient(model, 1e-1)
         optim.step()
@@ -67,7 +68,7 @@ def train_model(model, train_iter, epoch, optim):
 
 
 def loss_fn(prediction, target):
-    return F.cross_entropy(prediction, target)
+    return F.binary_cross_entropy(prediction, target.unsqueeze(1).float())
 
 
 def eval_model(model, test_iter):
@@ -91,14 +92,13 @@ def eval_model(model, test_iter):
                 text = text.cuda()
                 lengths = lengths.cuda()
                 target = target.cuda()
-            # prediction = model(text, lengths, len(batch))
             prediction = model(text)
             loss = loss_fn(prediction, target)
-            num_corrects = (torch.max(prediction, 1)[1].view(target.size()).data == target.data).sum()
-            # acc = 100.0 * num_corrects/len(batch)
+            num_corrects = (predict(prediction).view(target.size()).data == target.data).sum()
+
             total_epoch_loss += loss.item()
 
-            y_prediction.extend(torch.max(prediction, 1)[1].view(target.size()).tolist())
+            y_prediction.extend(predict(prediction).view(target.size()).tolist())
             y_gt.extend(target.tolist())
 
             count_true += num_corrects.item()
@@ -137,9 +137,9 @@ def main(args):
     # LOAD MODEL
     torch.device('cuda:0')
 
-    model = CNN_Text(args, word_embeddings, output_size)
+    model = LogisticRegression(args, word_embeddings, output_size)
     optim = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()))
-
+    # optim = torch.optim.SGD(filter(lambda p: p.requires_grad, model.parameters()), lr=0.01)
     if torch.cuda.is_available():
         model.cuda()
 
@@ -172,14 +172,10 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--epoch", type=int, default=25)
 
-    parser.add_argument('--model', type=str, choices=['cnn'], default='cnn')
+    parser.add_argument('--model', type=str, choices=['logistic_regression'], default='logistic_regression')
     parser.add_argument("--emb_size", type=int, default=200, help='Embedding size')
-    parser.add_argument('--kernel_sizes', type=list, default=[2, 3, 4, 5])
-    parser.add_argument('--kernel_num', type=int, default=100)
-    parser.add_argument('--fc_size', type=int, default=128, help='Full connected size.')
+    parser.add_argument("--binary", action='store_true', help='Whether use binary features or not')
 
-    parser.add_argument('--drop_out', default=0.0, type=float, help='Drop out for last fc')
-    parser.add_argument('--optim', type=str, choices=['adam', 'rmsprop'], default='rmsprop')
     parser.add_argument('--pretrained', type=str, default=None)
 
     args_ = parser.parse_args()

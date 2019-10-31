@@ -1,8 +1,7 @@
 from .train import eval_model
 from .model import LogisticRegression
 import torch
-from baseline_bilstm.load_data import load_data
-import os
+from baseline.baseline_bilstm import load_data
 from hierarchical_attention_networks.utils import *
 
 
