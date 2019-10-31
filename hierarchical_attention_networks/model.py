@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.autograd import Variable
-from flair.data import Sentence
 import math
 
 
@@ -230,11 +229,6 @@ def compute_custom_loss(att_weights0, att_weights1, document_lengths):
            compute_loss_from_att_weights(att_weights1).mean()
 
 
-from flair.embeddings import BertEmbeddings
-BERT_EMB = BertEmbeddings(layers='-1')
-BERT_EMB.cpu()
-
-
 class HierarchicalMultiAttention(nn.Module):
 
     def __init__(self, output_size, embedding_size, embedding_weight, attention_hops, lstm_hidden_size=256,
@@ -265,6 +259,7 @@ class HierarchicalMultiAttention(nn.Module):
 
         self.use_bert = True if bert is not None else False
         if self.use_bert:
+            from bert_emb import BERT_EMB
             # self.bert = [bert]
             self.itos = itos
             # embedding_size = self.bert[0].embedding_length
@@ -307,6 +302,7 @@ class HierarchicalMultiAttention(nn.Module):
         :param x: [num_sen, max_word]
         :return:
         """
+        from bert_emb import BERT_EMB, Sentence
         out_embeddings = torch.zeros((x.shape[0], x.shape[1], BERT_EMB.embedding_length))
         if torch.cuda.is_available():
             out_embeddings = out_embeddings.cuda()
@@ -332,8 +328,11 @@ class HierarchicalMultiAttention(nn.Module):
         count = 4
         for i in range(len(list_sentence) // count):
             # self.bert.embed(list_sentence[i * count: (i+1) * count])
-            BERT_EMB.embed(list_sentence[i * count: (i+1) * count])
-
+            try:
+                BERT_EMB.embed(list_sentence[i * count: (i+1) * count])
+            except RuntimeError as e:
+                print(list_sentence[i * count: (i + 1) * count])
+                raise e
         if len(list_sentence) % count != 0:
             # self.bert.embed(list_sentence[(i+1) * count:])
             BERT_EMB.embed(list_sentence[(i+1) * count:])

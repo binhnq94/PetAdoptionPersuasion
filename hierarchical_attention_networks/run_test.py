@@ -40,15 +40,16 @@ def run_test(save_dir):
     torch.device('cuda:0')
     DOCUMENT, LABEL, vocab_size, word_embeddings, \
     train_iter, valid_iter, test_iter = load_data(train_bsize=batch_size,
-                                                  bsize=batch_size * 2,
+                                                  bsize=args.batch_size * 2 if not args.use_bert else args.batch_size,
                                                   embedding_length=args.emb_size)
     print(LABEL.vocab.stoi)
-    print(DOCUMENT.vocab.vectors.size())
+    if not args.use_bert:
+        print(DOCUMENT.vocab.vectors.size())
     state_dict = torch.load(mpath)
     # print(state_dict['word_embeddings.weight'].size())
     # assert state_dict['word_embeddings.weight'].size() == TEXT.vocab.vectors.size()
 
-    print(state_dict.keys())
+    # print(state_dict.keys())
 
     model, _ = prepare_model(args, 2, word_embeddings, args.use_bert, DOCUMENT.vocab.itos)
 
@@ -58,11 +59,11 @@ def run_test(save_dir):
     print('test_iter')
     _, _, y_gt, y_prediction = eval_model(model, test_iter, args)
     print(classification_report(y_gt, y_prediction, digits=4, labels=[0, 1],
-                                target_names=['Adopted', 'Unadopted']))
+                                target_names=['Unadopted', 'Adopted']))
     print('val_iter')
     _, _, y_gt, y_prediction = eval_model(model, valid_iter, args)
     print(classification_report(y_gt, y_prediction, digits=4, labels=[0, 1],
-                                target_names=['Adopted', 'Unadopted']))
+                                target_names=['Unadopted', 'Adopted']))
 
 
 if __name__ == '__main__':

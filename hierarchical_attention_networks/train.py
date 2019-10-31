@@ -120,7 +120,7 @@ def eval_model(model, data_iter, args):
     count_true = 0
     count_all = 0
 
-    _begin_time = time.time()
+    # _begin_time = time.time()
     print('eval_len', len(data_iter))
     model.eval()
     with torch.no_grad():
@@ -148,8 +148,8 @@ def eval_model(model, data_iter, args):
 
             count_true += num_corrects.item()
             count_all += len(batch)
-            if (idx + 1) % (len(data_iter) // 10) == 0:
-                print('Time', (time.time() - _begin_time) / (idx + 1))
+            # if (idx + 1) % (len(data_iter) // 10) == 0:
+            #     print('Time', (time.time() - _begin_time) / (idx + 1))
 
     # return total_epoch_loss/len(val_iter), total_epoch_acc/len(val_iter)
     return total_epoch_loss / len(data_iter), count_true / count_all, y_gt, y_prediction

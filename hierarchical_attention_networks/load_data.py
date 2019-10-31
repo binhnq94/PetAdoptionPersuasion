@@ -26,8 +26,13 @@ def sent_tokenize(x):
 
 
 def tokenize(x):
-    return x.split()[:200]
-    # return x.split()
+    return x.split()
+
+
+# because bert only contain 200.
+def token4bert(x):
+    x = x.replace('\t', '').replace('\\t', '')
+    return tokenize(x)[:200]
 
 
 # TODO make for test, only load test file.
@@ -36,7 +41,11 @@ def load_data(train_bsize=32, bsize=64, embedding_length=200):
     label_field_file = f'{CURRENT_PATH}/models/label-{VERSION_DATA}.glove-{embedding_length}.pt'
 
     if not os.path.exists(document_field_file):
-        sentence = data.Field(tokenize=tokenize, lower=True, batch_first=True)
+        if embedding_length > 0:
+            sentence = data.Field(tokenize=tokenize, lower=True, batch_first=True)
+        else:
+            sentence = data.Field(tokenize=token4bert, lower=True, batch_first=True)
+
         document = data.NestedField(nesting_field=sentence, tokenize=sent_tokenize, include_lengths=True)
         label = data.LabelField()
     else:
