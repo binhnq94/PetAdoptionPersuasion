@@ -44,8 +44,8 @@ def _create_remove_pattern():
                                # avoid matching "foo.na" in "foo.na@example.com"
       )
     """
-    url = re.compile(urls)
-    email = re.compile(r'[\w.!#$%&’*+\/=?^`{|}~-]+@[\w-]+(?:\.[\w-]+)*')
+    url = re.compile(urls, re.VERBOSE | re.I | re.UNICODE)
+    email = re.compile(r'[\w.!#$%&’*+\/=?^`{|}~-]+@[\w-]+(?:\.[\w-]+)*', re.VERBOSE | re.I | re.UNICODE)
 
 
     # patterns = "(" + "|".join(patterns) + ")"
@@ -59,7 +59,11 @@ def _create_remove_pattern():
 REPLACE_EXPS = _create_remove_pattern()
 
 
+ANOTHER_REGEX = re.compile(r'[+_*~=\\]{5,}', re.VERBOSE | re.I | re.UNICODE)
+
+
 def clean_text(text):
+    text = ANOTHER_REGEX.sub(' ', text)
     for key in ['__url__', '__email__']:
         exp = REPLACE_EXPS[key]
         text = exp.sub(key, text)

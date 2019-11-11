@@ -1,7 +1,8 @@
 from os import path
 from bs4 import BeautifulSoup
-from tools.text_core.clean_data import clean_text
+from tools.text_core.clean_data import clean_text, REPLACE_EXPS
 import nltk
+import pandas as pd
 
 
 def write_all_col_names(col_names):
@@ -24,44 +25,54 @@ index_text = 1
 index_status = 13
 
 
-PREFIX = 'converted-v4'
+# PREFIX = 'converted-v4'
+PREFIX = 'converted-v6'
 
 
 def main(input_file):
     output_file = path.join(path.dirname(input_file), PREFIX + '_' + path.basename(input_file))
 
-    with open(input_file, 'r', encoding='utf-8') as fi, \
-      open(output_file, 'w', encoding='utf-8') as fo:
-        for index, line in enumerate(fi):
-            line = process_line(line)
-            text = line[index_text]
-            text = text.replace('\t', ' ')
-            status = line[index_status]
-            if status not in ['Unadopted', 'Adopted']:
-                raise Exception('Wrong status: {}'.format(status))
+    raw_df = pd.read_csv(input_file, header=None)
 
-            soup = BeautifulSoup(text)
-            text = soup.get_text()
-            text = text.replace('\n', ' ').replace('\t', ' ')
-            text = clean_text(text)
+    out_df = pd.DataFrame(columns=['id_', 'text', 'status'])
 
-            # text = ' '.join(nltk.word_tokenize(text))
-            sentences = nltk.sent_tokenize(text)
-            # print(sentences)
+    for row in raw_df.itertuples(index=False):
+        text = row._1
+        text = text.replace('\t', ' ')
+        status = row._13
+        if status not in ['Unadopted', 'Adopted']:
+            raise Exception('Wrong status: {}'.format(status))
 
-            tokenized_sentences = []
+        soup = BeautifulSoup(text, features="html.parser")
+        text = soup.get_text()
+        text = text.replace('\n', ' ').replace('\t', ' ').replace('\\t', '')
+        text = clean_text(text)
 
-            for sen in sentences:
-                tokenized_sen = ' '.join(nltk.word_tokenize(sen, preserve_line=True))
-                # print(tokenized_sen)
-                tokenized_sentences.append(tokenized_sen)
-            # print(text, status)
+        # text = ' '.join(nltk.word_tokenize(text))
+        sentences = nltk.sent_tokenize(text)
+        # print(sentences)
 
-            out_text = '<end>'.join(tokenized_sentences)
-            print(out_text)
+        tokenized_sentences = []
 
-            fo.write("{}\t{}\t{}\n".format(line[0], out_text, status))
-        print(index)
+        for sen in sentences:
+            tokens = nltk.word_tokenize(sen, preserve_line=True)
+            for t in tokens:
+                if len(t) > 20:
+                    print(t)
+            tokenized_sen = ' '.join(tokens)
+            # print(tokenized_sen)
+            tokenized_sentences.append(tokenized_sen)
+        # print(text, status)
+
+        out_text = '<end>'.join(tokenized_sentences)
+        # print(out_text)
+        out_df = out_df.append({
+            'id_': row._0,
+            'text': out_text,
+            'status': status
+        }, ignore_index=True)
+
+    out_df.to_csv(output_file, sep='\t', index=False, header=False)
 
 
 if __name__ == '__main__':
