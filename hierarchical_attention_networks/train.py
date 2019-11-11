@@ -22,7 +22,7 @@ def clip_gradient(model, clip_value):
 
 
 def get_data_from_batch(batch):
-    document_bert = batch.id
+    id_ = batch.id
     document, document_lengths, sent_lengths = batch.document
     target = batch.label
     target = torch.autograd.Variable(target).long()
@@ -31,8 +31,7 @@ def get_data_from_batch(batch):
         document_lengths = document_lengths.cuda()
         sent_lengths = sent_lengths.cuda()
         target = target.cuda()
-        document_bert = document_bert.cuda()
-    return document_bert, document, document_lengths, sent_lengths, target
+    return id_, document, document_lengths, sent_lengths, target
 
 
 def train_model(model, train_iter, optim, epoch, args):
@@ -52,12 +51,9 @@ def train_model(model, train_iter, optim, epoch, args):
     print('Number step', len(train_iter))
 
     for idx, batch in enumerate(train_iter):
-        document_bert, document, document_lengths, sent_lengths, target = get_data_from_batch(batch)
+        id_, document, document_lengths, sent_lengths, target = get_data_from_batch(batch)
         # optim.zero_grad()
-        if model.use_bert is False:
-            prediction = model(document, document_lengths, sent_lengths)
-        else:
-            prediction = model(document_bert, document_lengths, sent_lengths)
+        prediction = model(id_, document, document_lengths, sent_lengths)
 
         if model.custom_loss:
             prediction, custom_loss = prediction
@@ -129,11 +125,8 @@ def eval_model(model, data_iter, args):
     model.eval()
     with torch.no_grad():
         for idx, batch in enumerate(data_iter):
-            document_bert, document, document_lengths, sent_lengths, target = get_data_from_batch(batch)
-            if model.use_bert is False:
-                prediction = model(document, document_lengths, sent_lengths)
-            else:
-                prediction = model(document_bert, document_lengths, sent_lengths)
+            id_, document, document_lengths, sent_lengths, target = get_data_from_batch(batch)
+            prediction = model(id_, document, document_lengths, sent_lengths)
             if model.custom_loss:
                 prediction, custom_loss = prediction
 
@@ -173,7 +166,7 @@ def prepare_save_dir(args):
     return save_dir
 
 
-def prepare_model(args, output_size, word_embeddings, use_bert, itos):
+def prepare_model(args, output_size, word_embeddings, use_bert):
     if args.model == 'hierarchical':
         if use_bert is True:
             raise NotImplementedError()
@@ -196,8 +189,7 @@ def prepare_model(args, output_size, word_embeddings, use_bert, itos):
                                            fc_size=args.fc_size,
                                            drop_out=args.drop_out,
                                            use_transformer=args.use_transformer,
-                                           bert=use_bert,
-                                           itos=itos)
+                                           bert=use_bert)
     elif args.model == 'multi_reasoning':
         from .multi_reasoning_model import MultiReasoning
         model = MultiReasoning(output_size=output_size,
@@ -228,7 +220,7 @@ def main(args):
     # LOAD MODEL
     torch.device('cuda:0')
 
-    model, optim = prepare_model(args, output_size, word_embeddings, args.use_bert, DOCUMENT.vocab.itos)
+    model, optim = prepare_model(args, output_size, word_embeddings, args.use_bert)
     print("state_dict", list(model.state_dict()))
 
     if torch.cuda.is_available():

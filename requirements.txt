@@ -1,0 +1,5 @@
+torch==1.3.0
+-e git+https://github.com/pytorch/text.git@26bfce6869dc704f1d86792f9a681d453d7e7bb8#egg=torchtext
+flair==0.4.3
+pandas==0.25.2
+scikit-learn==0.21.3

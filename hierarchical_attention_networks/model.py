@@ -233,7 +233,7 @@ class HierarchicalMultiAttention(nn.Module):
 
     def __init__(self, output_size, embedding_size, embedding_weight, attention_hops, lstm_hidden_size=256,
                  lstm_num_layers=1, attention_size=64, fc_size=128, drop_out=0, custom_loss=False,
-                 use_transformer=False, bert=None, itos=None):
+                 use_transformer=False, bert=None):
         """
 
         :param output_size:
@@ -256,14 +256,17 @@ class HierarchicalMultiAttention(nn.Module):
         self.use_embedding_weight = True if embedding_weight is not None else False
         if self.use_embedding_weight:
             self.word_embeddings = nn.Embedding.from_pretrained(embedding_weight)
+            self.embedding_size = embedding_size
 
         self.use_bert = bert
         if self.use_bert:
-            embedding_size = 768
-            print('bert_size', embedding_size)
+            from bert_embedding.trainable_bert import BertEmbeddings
+            self.bert_embs = BertEmbeddings(layers='-1')
+            self.embedding_size = self.bert_embs.embedding_length
+            print('bert_size', self.embedding_size)
 
         self.lstm_layers = nn.ModuleList([
-            LstmLayer(embedding_size, lstm_hidden_size, num_layers=lstm_num_layers),
+            LstmLayer(self.embedding_size, lstm_hidden_size, num_layers=lstm_num_layers),
             LstmLayer(2 * lstm_hidden_size, lstm_hidden_size, num_layers=lstm_num_layers)
         ])
         self.att_layers = nn.ModuleList([
@@ -292,36 +295,93 @@ class HierarchicalMultiAttention(nn.Module):
         x = self.final_linear(x)
         return x
 
-    def do_embedding(self, x):
+    def bert_embedding(self, x, shape):
+        """
+        :param shape:
+        :param x: [num_sen, max_word]
+        :return:
+        """
+        from bert_embedding.trainable_bert import Sentence, ID2DOCUMENT
+        list_sentence = []
+
+        # for sen in x:
+        #     sen = sen.tolist()
+        #
+        #     out_sen = []
+        #     for w in sen:
+        #         out_w = self.itos[w]
+        #         if out_w != '<pad>':
+        #             out_sen.append(out_w)
+        #     if out_sen:
+        #         out_sen = ' '.join(out_sen)
+        #         # print(out_sen)
+        #
+        #         out_sen = Sentence(out_sen)
+        #         list_sentence.append(out_sen)
+
+        for id_ in x:
+            doc = ID2DOCUMENT[id_.item()]
+            for sen in doc.split('<end>'):
+                list_sentence.append(Sentence(sen))
+
+        # count = 8
+        count = 4
+        for i in range(len(list_sentence) // count):
+            # self.bert.embed(list_sentence[i * count: (i+1) * count])
+            try:
+                self.bert_embs.embed(list_sentence[i * count: (i + 1) * count])
+            except RuntimeError as e:
+                print(list_sentence[i * count: (i + 1) * count])
+                raise e
+        if len(list_sentence) % count != 0:
+            # self.bert.embed(list_sentence[(i+1) * count:])
+            self.bert_embs.embed(list_sentence[(i + 1) * count:])
+
+        out_embeddings = torch.zeros((shape[0] * shape[1], shape[2], self.bert_embs.embedding_length))
+        if torch.cuda.is_available():
+            out_embeddings = out_embeddings.cuda()
+
+        for sen_idx, sen in enumerate(list_sentence):
+            # print(sen)
+            try:
+                sen_embedding = torch.stack([token.embedding for token in sen], dim=0).cuda()
+                out_embeddings[sen_idx][:sen_embedding.shape[0]] = sen_embedding
+            except Exception as e:
+                print(x)
+                print(sen_idx)
+                print(sen)
+                print(out_embeddings.shape)
+                print(sen_embedding.shape)
+                print(out_embeddings[sen_idx].shape)
+                raise e
+
+        return out_embeddings
+
+    def do_embedding(self, x, id_):
         if self.use_embedding_weight:
             return self.word_embeddings(x)
-        # elif self.use_bert:
-        #     return self.bert_embedding(x)
+        elif self.use_bert:
+            return self.bert_embedding(id_, x.shape)
         else:
             raise NotImplementedError()
 
-    def forward(self, document, document_lengths, sequence_lengths):
+    def forward(self, id_, document, document_lengths, sequence_lengths):
         """
-
-        :param document: [batch_size, max_sent, max_word]
+        :param id_: [batch_size]
+        :param document: [batch_size, max_seq, max_word]
         :param document_lengths: [batch_size]
         :param sequence_lengths: [batch_size, max_seq]
         :return:
         """
         origin_shape = document.shape
-        if not self.use_bert:
-            flat_document = document.view(-1, origin_shape[-1])
-        else:
-            flat_document = document.view(-1, origin_shape[-2], origin_shape[-1])
+        document = self.do_embedding(document, id_)
+        flat_document = document.view(origin_shape[0] * origin_shape[1],
+                                      origin_shape[2], self.embedding_size)
         flat_sequence_lengths = sequence_lengths.view(-1)
 
         flat_document, flat_sequence_lengths = filter_sents(flat_document, flat_sequence_lengths)
-        if self.use_bert is False:
-            flat_emb_document = self.do_embedding(flat_document)
-        else:
-            flat_emb_document = flat_document
 
-        tokens_lstm = self.lstm_layers[0](flat_emb_document, flat_sequence_lengths)
+        tokens_lstm = self.lstm_layers[0](flat_document, flat_sequence_lengths)
         if self.use_transformer:
             tokens_lstm = self.transformers[0](tokens_lstm, flat_sequence_lengths)
 
@@ -372,12 +432,13 @@ class TransformerLayer(nn.Module):
         Q = self.Q(sequence_input)
         V = self.V(sequence_input)
 
-        scores = Q@(K.transpose(-2, -1)) / math.sqrt(self.input_size)
+        scores = Q @ (K.transpose(-2, -1)) / math.sqrt(self.input_size)
 
         # print('transformer', 'scores.shape', scores.shape)
 
-        mask = torch.arange(max_len).cuda().expand(batch_size, max_len) < lengths.unsqueeze(1)   # [batch_size, max_len]
-        mask = mask.unsqueeze(1).repeat(1, max_len, 1)      # mask.unsqueeze(1) -> [batch_size, 1, max_len] -> [batch_size, max_len, max_len]
+        mask = torch.arange(max_len).cuda().expand(batch_size, max_len) < lengths.unsqueeze(1)  # [batch_size, max_len]
+        mask = mask.unsqueeze(1).repeat(1, max_len,
+                                        1)  # mask.unsqueeze(1) -> [batch_size, 1, max_len] -> [batch_size, max_len, max_len]
         # print('transformer', 'mask.shape', mask.shape)
 
         scores[~mask] = -float('inf')
