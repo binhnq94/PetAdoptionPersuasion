@@ -3,9 +3,10 @@ from torchtext.vocab import Vectors, GloVe
 # from nltk import word_tokenize
 import os
 import torch
+import re
 
 # CURRENT_PATH = "/media/binhnq/New Volume1"
-CURRENT_PATH = os.path.dirname(__file__)
+# CURRENT_PATH = os.path.dirname(__file__)
 
 # VERSION_DATA = 'v3'
 # VERSION_DATA = 'v4'
@@ -17,40 +18,49 @@ TRAIN_FN = f'converted-{VERSION_DATA}_train.csv'
 VAL_FN = f'converted-{VERSION_DATA}_val.csv'
 TEST_FN = f'converted-{VERSION_DATA}_test.csv'
 
-if not os.path.exists(f'{CURRENT_PATH}/models'):
-    os.makedirs(f'{CURRENT_PATH}/models')
+# if not os.path.exists(f'{CURRENT_PATH}/models'):
+#     os.makedirs(f'{CURRENT_PATH}/models')
+
+
+RE_DUPLICATE_SPACE = re.compile(' +', flags=re.UNICODE)
 
 
 def sent_tokenize(x):
-    return x.split('<end>')
+    document = x.replace('\\t', '')
+    document = RE_DUPLICATE_SPACE.sub(' ', document)
+    return document.split('<end>')
 
 
 def tokenize(x):
     return x.split()
 
-
-# because bert only contain 200.
-def token4bert(x):
-    x = x.replace('\t', '').replace('\\t', '')
-    return tokenize(x)[:200]
+#
+# # because bert only contain 200.
+# def token4bert(x):
+#     x = x.replace('\t', '').replace('\\t', '')
+#     return tokenize(x)[:200]
 
 
 # TODO make for test, only load test file.
 def load_data(train_bsize=32, bsize=64, embedding_length=200):
-    document_field_file = f'{CURRENT_PATH}/models/document-{VERSION_DATA}.glove-{embedding_length}.pt'
-    label_field_file = f'{CURRENT_PATH}/models/label-{VERSION_DATA}.glove-{embedding_length}.pt'
+    document_field_file = f'hierarchical_attention_networks/models/document-{VERSION_DATA}.glove-{embedding_length}.pt'
+    label_field_file = f'hierarchical_attention_networks/models/label-{VERSION_DATA}.glove-{embedding_length}.pt'
 
     if not os.path.exists(document_field_file):
-        if embedding_length > 0:
-            sentence = data.Field(tokenize=tokenize, lower=True, batch_first=True)
-        else:
-            sentence = data.Field(tokenize=token4bert, lower=True, batch_first=True)
-
+        sentence = data.Field(tokenize=tokenize, lower=True, batch_first=True)
         document = data.NestedField(nesting_field=sentence, tokenize=sent_tokenize, include_lengths=True)
         label = data.LabelField()
     else:
         document = torch.load(document_field_file)
         label = torch.load(label_field_file)
+
+    if embedding_length > 0:
+        ID = data.Field(sequential=False, use_vocab=False, unk_token=None, is_target=False)
+    else:
+        from bert_embedding import bert_embedding_by_id2
+        ID = data.Field(sequential=False, use_vocab=False, unk_token=None,
+                        is_target=False, postprocessing=bert_embedding_by_id2,
+                        dtype=torch.float)
 
     train_data, val_data, test_data = data.TabularDataset.splits(
         path='datasets/190524',
@@ -58,7 +68,7 @@ def load_data(train_bsize=32, bsize=64, embedding_length=200):
         validation=VAL_FN,
         test=TEST_FN,
         format='tsv',
-        fields=[('id', None), ('document', document), ('label', label)]
+        fields=[('id', ID), ('document', document), ('label', label)]
     )
 
     if not os.path.exists(document_field_file):
@@ -91,21 +101,22 @@ def load_data(train_bsize=32, bsize=64, embedding_length=200):
 
     vocab_size = len(document.vocab)
 
-    return document, label, vocab_size, word_embeddings, train_iter, valid_iter, test_iter
+    return ID, document, label, vocab_size, word_embeddings, train_iter, valid_iter, test_iter
 
 
 if __name__ == '__main__':
     # prepare data:
-    DOCUMENT, LABEL, vocab_size, word_embeddings, train_iter, valid_iter, test_iter = load_data(train_bsize=2,
+    ID, DOCUMENT, LABEL, vocab_size, word_embeddings, train_iter, valid_iter, test_iter = load_data(train_bsize=2,
                                                                                                 bsize=2 * 2,
                                                                                                 embedding_length=200)
 
     print('vocab_size', vocab_size)
 
     for idx, batch in enumerate(train_iter):
-        document = batch.document
+        ID = batch.id
+        doc = batch.document
         target = batch.label
-        print('document', document)
+        print('document', doc)
         print('target', target)
         break
 
@@ -113,7 +124,7 @@ if __name__ == '__main__':
     print(DOCUMENT.vocab.itos[0])
 
     out_document = []
-    for sen in document[0][0]:
+    for sen in doc[0][0]:
         sen = sen.tolist()
         out_sen = []
         for w in sen:

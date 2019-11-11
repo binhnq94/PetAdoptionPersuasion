@@ -36,7 +36,7 @@ def load_data(train_bsize=32, bsize=64, embedding_length=200):
     else:
         from bert_embedding import bert_embedding_by_id
         ID = data.Field(sequential=False, use_vocab=False, unk_token=None,
-                        is_target=False, postprocessing=bert_embedding_by_id)
+                        is_target=False, postprocessing=bert_embedding_by_id, dtype=torch.float)
 
     train_data, val_data, test_data = data.TabularDataset.splits(
         path=DATA_DIR,

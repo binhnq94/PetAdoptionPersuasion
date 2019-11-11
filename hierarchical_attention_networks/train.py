@@ -8,7 +8,6 @@ import random
 from .utils import *
 import time
 
-
 # CURRENT_DIR = "/media/binhnq/New Volume1"
 CURRENT_DIR = os.path.dirname(__file__)
 BASENAME_DIR = os.path.basename(CURRENT_DIR)
@@ -23,6 +22,7 @@ def clip_gradient(model, clip_value):
 
 
 def get_data_from_batch(batch):
+    document_bert = batch.id
     document, document_lengths, sent_lengths = batch.document
     target = batch.label
     target = torch.autograd.Variable(target).long()
@@ -31,7 +31,8 @@ def get_data_from_batch(batch):
         document_lengths = document_lengths.cuda()
         sent_lengths = sent_lengths.cuda()
         target = target.cuda()
-    return document, document_lengths, sent_lengths, target
+        document_bert = document_bert.cuda()
+    return document_bert, document, document_lengths, sent_lengths, target
 
 
 def train_model(model, train_iter, optim, epoch, args):
@@ -51,9 +52,12 @@ def train_model(model, train_iter, optim, epoch, args):
     print('Number step', len(train_iter))
 
     for idx, batch in enumerate(train_iter):
-        document, document_lengths, sent_lengths, target = get_data_from_batch(batch)
+        document_bert, document, document_lengths, sent_lengths, target = get_data_from_batch(batch)
         # optim.zero_grad()
-        prediction = model(document, document_lengths, sent_lengths)
+        if model.use_bert is False:
+            prediction = model(document, document_lengths, sent_lengths)
+        else:
+            prediction = model(document_bert, document_lengths, sent_lengths)
 
         if model.custom_loss:
             prediction, custom_loss = prediction
@@ -102,7 +106,7 @@ def train_model(model, train_iter, optim, epoch, args):
                 print("DEBUG", "cross_entropy_loss", cross_entropy_loss.item())
             print(f'Epoch: {epoch + 1}, Idx: {idx + 1}, Training Loss: {loss.item():.4f}, '
                   f'Training Accuracy: {count_true / count_all: .4f}%')
-            print('Time', (time.time() - _begin_time)/(idx+1))
+            print('Time', (time.time() - _begin_time) / (idx + 1))
 
     return total_epoch_loss / len(train_iter), count_true / count_all
 
@@ -125,8 +129,11 @@ def eval_model(model, data_iter, args):
     model.eval()
     with torch.no_grad():
         for idx, batch in enumerate(data_iter):
-            document, document_lengths, sent_lengths, target = get_data_from_batch(batch)
-            prediction = model(document, document_lengths, sent_lengths)
+            document_bert, document, document_lengths, sent_lengths, target = get_data_from_batch(batch)
+            if model.use_bert is False:
+                prediction = model(document, document_lengths, sent_lengths)
+            else:
+                prediction = model(document_bert, document_lengths, sent_lengths)
             if model.custom_loss:
                 prediction, custom_loss = prediction
 
@@ -178,13 +185,6 @@ def prepare_model(args, output_size, word_embeddings, use_bert, itos):
     elif args.model == 'multi_att':
         from .model import HierarchicalMultiAttention
 
-        if use_bert:
-            print("USE BERT")
-            # bert_emb = BERT_EMB
-            bert_emb = True
-        else:
-            bert_emb = None
-
         model = HierarchicalMultiAttention(output_size=output_size,
                                            embedding_size=args.emb_size,
                                            embedding_weight=word_embeddings,
@@ -196,7 +196,7 @@ def prepare_model(args, output_size, word_embeddings, use_bert, itos):
                                            fc_size=args.fc_size,
                                            drop_out=args.drop_out,
                                            use_transformer=args.use_transformer,
-                                           bert=bert_emb,
+                                           bert=use_bert,
                                            itos=itos)
     elif args.model == 'multi_reasoning':
         from .multi_reasoning_model import MultiReasoning
@@ -219,7 +219,7 @@ def main(args):
     save_dir = prepare_save_dir(args)
     output_size = 2
 
-    DOCUMENT, LABEL, vocab_size, word_embeddings, \
+    ID, DOCUMENT, LABEL, vocab_size, word_embeddings, \
     train_iter, valid_iter, test_iter = load_data(train_bsize=args.batch_size,
                                                   bsize=args.batch_size * 2 if not args.use_bert else args.batch_size,
                                                   embedding_length=args.emb_size)

@@ -43,13 +43,23 @@ class LayerOne(nn.Module):
 
     def __init__(self, embedding_size, embedding_weight, attention_hops, lstm_hidden_size=256,
                  lstm_num_layers=1, attention_size=64,
-                 custom_loss=False, use_transformer=False
+                 custom_loss=False, use_transformer=False,
+                 use_bert=False
                  ):
         super(LayerOne, self).__init__()
         self.custom_loss = custom_loss
         self.attention_hops = attention_hops
         self.lstm_hidden_size = lstm_hidden_size
-        self.word_embeddings = nn.Embedding.from_pretrained(embedding_weight)
+
+        self.use_embedding_weight = True if embedding_weight is not None else False
+        if self.use_embedding_weight:
+            self.word_embeddings = nn.Embedding.from_pretrained(embedding_weight)
+
+        self.use_bert = use_bert
+        if self.use_bert:
+            embedding_size = 768
+            print('bert_size', embedding_size)
+
         self.lstm_layers = nn.ModuleList([
             LstmLayer(embedding_size, lstm_hidden_size, num_layers=lstm_num_layers),
             LstmLayer(2 * lstm_hidden_size, lstm_hidden_size, num_layers=lstm_num_layers)
@@ -107,11 +117,17 @@ class LayerOne(nn.Module):
         :return:
         """
         origin_shape = document.shape
-        flat_document = document.view(-1, origin_shape[-1])
+        if not self.use_bert:
+            flat_document = document.view(-1, origin_shape[-1])
+        else:
+            flat_document = document.view(-1, origin_shape[-2], origin_shape[-1])
         flat_sequence_lengths = sequence_lengths.view(-1)
 
         flat_document, flat_sequence_lengths = filter_sents(flat_document, flat_sequence_lengths)
-        flat_emb_document = self.word_embeddings(flat_document)
+        if self.use_bert is False:
+            flat_emb_document = self.word_embeddings(flat_document)
+        else:
+            flat_emb_document = flat_document
 
         tokens_lstm, sentences_present, sentences_present_layer_one, att_weights_0, another_att_weights = \
             self.sentence_level(flat_emb_document,
@@ -338,7 +354,7 @@ class MultiReasoning(nn.Module):
         self.args = args
         self.custom_loss = args.custom_loss
 
-        self.word_embeddings = nn.Embedding.from_pretrained(embedding_weight)
+        self.use_bert = args.use_bert
 
         self.layer_one = LayerOne(args.emb_size, embedding_weight,
                                   attention_hops=args.att_hops[:3],
@@ -346,7 +362,8 @@ class MultiReasoning(nn.Module):
                                   lstm_num_layers=args.lstm_layers,
                                   attention_size=args.att_size,
                                   custom_loss=args.custom_loss,
-                                  use_transformer=args.use_transformer
+                                  use_transformer=args.use_transformer,
+                                  use_bert=self.use_bert
                                   )
 
         self.number_layer = args.number_layer

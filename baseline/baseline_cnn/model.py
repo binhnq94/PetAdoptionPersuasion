@@ -19,7 +19,6 @@ class CNN_Text(nn.Module):
 
         self.use_bert = bert
         if self.use_bert:
-            self.itos = itos
             embedding_size = 768
             print('bert_size', embedding_size)
 
@@ -54,7 +53,7 @@ class CNN_Text(nn.Module):
         if self.use_embedding_weight:
             return self.word_embeddings(x)
         elif self.use_bert:
-            return x_id.float()
+            return x_id
         else:
             raise NotImplementedError()
 

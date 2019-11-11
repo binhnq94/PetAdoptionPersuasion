@@ -38,7 +38,7 @@ def run_test(save_dir):
 
     batch_size = BATCH_SIZE
     torch.device('cuda:0')
-    DOCUMENT, LABEL, vocab_size, word_embeddings, \
+    ID, DOCUMENT, LABEL, vocab_size, word_embeddings, \
     train_iter, valid_iter, test_iter = load_data(train_bsize=batch_size,
                                                   bsize=args.batch_size * 2 if not args.use_bert else args.batch_size,
                                                   embedding_length=args.emb_size)

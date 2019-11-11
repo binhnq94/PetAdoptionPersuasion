@@ -257,13 +257,9 @@ class HierarchicalMultiAttention(nn.Module):
         if self.use_embedding_weight:
             self.word_embeddings = nn.Embedding.from_pretrained(embedding_weight)
 
-        self.use_bert = True if bert is not None else False
+        self.use_bert = bert
         if self.use_bert:
-            from bert_emb import BERT_EMB
-            # self.bert = [bert]
-            self.itos = itos
-            # embedding_size = self.bert[0].embedding_length
-            embedding_size = BERT_EMB.embedding_length
+            embedding_size = 768
             print('bert_size', embedding_size)
 
         self.lstm_layers = nn.ModuleList([
@@ -296,75 +292,11 @@ class HierarchicalMultiAttention(nn.Module):
         x = self.final_linear(x)
         return x
 
-    def bert_embedding(self, x):
-        """
-
-        :param x: [num_sen, max_word]
-        :return:
-        """
-        from bert_emb import BERT_EMB, Sentence
-        out_embeddings = torch.zeros((x.shape[0], x.shape[1], BERT_EMB.embedding_length))
-        if torch.cuda.is_available():
-            out_embeddings = out_embeddings.cuda()
-
-        list_sentence = []
-
-        for sen in x:
-            sen = sen.tolist()
-
-            out_sen = []
-            for w in sen:
-                out_w = self.itos[w]
-                if out_w != '<pad>':
-                    out_sen.append(out_w)
-            if out_sen:
-                out_sen = ' '.join(out_sen)
-                # print(out_sen)
-
-                out_sen = Sentence(out_sen)
-                list_sentence.append(out_sen)
-
-        # count = 8
-        count = 4
-        for i in range(len(list_sentence) // count):
-            # self.bert.embed(list_sentence[i * count: (i+1) * count])
-            try:
-                BERT_EMB.embed(list_sentence[i * count: (i+1) * count])
-            except RuntimeError as e:
-                print(list_sentence[i * count: (i + 1) * count])
-                raise e
-        if len(list_sentence) % count != 0:
-            # self.bert.embed(list_sentence[(i+1) * count:])
-            BERT_EMB.embed(list_sentence[(i+1) * count:])
-
-        # try:
-        #     # BERT_EMB.cpu()
-        #     BERT_EMB.embed(list_sentence)
-        # except Exception as e:
-        #     print(list_sentence)
-        #     raise e
-
-        for sen_idx, sen in enumerate(list_sentence):
-            # print(sen)
-            try:
-                # self.bert[0].embed(sen)
-                # BERT_EMB.embed(sen)
-                sen_embedding = torch.stack([token.embedding for token in sen], dim=0).cuda()
-                out_embeddings[sen_idx][:sen_embedding.shape[0]] = sen_embedding
-            except Exception as e:
-                print(sen)
-                raise e
-
-        # if torch.cuda.is_available():
-        #     out_embeddings = out_embeddings.cuda()
-
-        return out_embeddings
-
     def do_embedding(self, x):
         if self.use_embedding_weight:
             return self.word_embeddings(x)
-        elif self.use_bert:
-            return self.bert_embedding(x)
+        # elif self.use_bert:
+        #     return self.bert_embedding(x)
         else:
             raise NotImplementedError()
 
@@ -377,11 +309,17 @@ class HierarchicalMultiAttention(nn.Module):
         :return:
         """
         origin_shape = document.shape
-        flat_document = document.view(-1, origin_shape[-1])
+        if not self.use_bert:
+            flat_document = document.view(-1, origin_shape[-1])
+        else:
+            flat_document = document.view(-1, origin_shape[-2], origin_shape[-1])
         flat_sequence_lengths = sequence_lengths.view(-1)
 
         flat_document, flat_sequence_lengths = filter_sents(flat_document, flat_sequence_lengths)
-        flat_emb_document = self.do_embedding(flat_document)
+        if self.use_bert is False:
+            flat_emb_document = self.do_embedding(flat_document)
+        else:
+            flat_emb_document = flat_document
 
         tokens_lstm = self.lstm_layers[0](flat_emb_document, flat_sequence_lengths)
         if self.use_transformer:

@@ -10,7 +10,7 @@ from hierarchical_attention_networks.utils import *
 
 SEED = 0
 
-CURRENT_DIR = "/mnt/sda4"
+CURRENT_DIR = "baseline/baseline_cnn"
 BASENAME_DIR = os.path.basename(CURRENT_DIR)
 
 DEBUG = False

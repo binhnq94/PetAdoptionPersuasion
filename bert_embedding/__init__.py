@@ -60,3 +60,22 @@ def bert_embedding_by_id(list_x_id, _):
         out_embeddings[i][:emb.shape[0]] = emb
 
     return out_embeddings.numpy()
+
+
+def bert_embedding_by_id2(list_x_id, _):
+    list_list_sens = []
+    for x_id in list_x_id:
+        f_path = BERT_FILES[x_id]
+        list_sens = torch.load(f_path)
+        list_list_sens.append(list_sens)
+
+    max_token = max([sen.shape[0] for doc in list_list_sens for sen in doc])
+
+    max_sen = max([len(doc) for doc in list_list_sens])
+
+    out_embeddings = torch.zeros((len(list_x_id), max_sen, max_token, 768))
+    for i, doc in enumerate(list_list_sens):
+        for j, sen in enumerate(doc):
+            out_embeddings[i][j][:sen.shape[0]] = sen
+
+    return out_embeddings.numpy()
