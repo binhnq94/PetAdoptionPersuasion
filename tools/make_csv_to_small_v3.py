@@ -24,7 +24,6 @@ def process_line(line):
 index_text = 1
 index_status = 13
 
-
 # PREFIX = 'converted-v4'
 PREFIX = 'converted-v6'
 
@@ -58,10 +57,28 @@ def main(input_file):
             tokens = nltk.word_tokenize(sen, preserve_line=True)
             for t in tokens:
                 if len(t) > 20:
-                    print(t)
-            tokenized_sen = ' '.join(tokens)
-            # print(tokenized_sen)
-            tokenized_sentences.append(tokenized_sen)
+                    # print(t)
+                    pass
+            len_tokens = len(tokens)
+
+            if len_tokens > 180:
+                list_split_sen = []
+                split_size = 100
+                number_split = len_tokens // split_size
+                current_split_size = len_tokens // number_split
+                print(len_tokens, number_split, current_split_size)
+
+                for x in range(0, number_split - 1):
+                    tokenized_sen = ' '.join(tokens[x * current_split_size:(x + 1) * current_split_size])
+                    list_split_sen.append(tokenized_sen)
+
+                tokenized_sen = ' '.join(tokens[(number_split - 1) * current_split_size:])
+                list_split_sen.append(tokenized_sen)
+                assert sum([len(x.split()) for x in list_split_sen]) == len_tokens
+            else:
+                tokenized_sen = ' '.join(tokens)
+                # print(tokenized_sen)
+                tokenized_sentences.append(tokenized_sen)
         # print(text, status)
 
         out_text = '<end>'.join(tokenized_sentences)
@@ -77,4 +94,5 @@ def main(input_file):
 
 if __name__ == '__main__':
     import sys
+
     main(sys.argv[1])
