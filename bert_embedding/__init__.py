@@ -25,8 +25,8 @@ def load_list_files(layers='-1'):
     return list_files
 
 
-BERT_FILES = load_list_files()
-print('BERT_FILES', len(BERT_FILES))
+# BERT_FILES = load_list_files()
+# print('BERT_FILES', len(BERT_FILES))
 
 
 def bert_embedding(list_x_id, x, flatten=True):

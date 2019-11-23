@@ -82,12 +82,13 @@ def main(input_file):
         # print(text, status)
 
         out_text = '<end>'.join(tokenized_sentences)
-        # print(out_text)
-        out_df = out_df.append({
-            'id_': row._0,
-            'text': out_text,
-            'status': status
-        }, ignore_index=True)
+        if out_text:
+            # print(out_text)
+            out_df = out_df.append({
+                'id_': row._0,
+                'text': out_text,
+                'status': status
+            }, ignore_index=True)
 
     out_df.to_csv(output_file, sep='\t', index=False, header=False)
 

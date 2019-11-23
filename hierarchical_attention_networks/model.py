@@ -320,12 +320,16 @@ class HierarchicalMultiAttention(nn.Module):
         #         list_sentence.append(out_sen)
 
         for id_ in x:
-            doc = ID2DOCUMENT[id_.item()]
-            for sen in doc.split('<end>'):
-                list_sentence.append(Sentence(sen))
+            try:
+                doc = ID2DOCUMENT[id_.item()]
+                for sen in doc.split('<end>'):
+                    list_sentence.append(Sentence(sen))
+            except AttributeError as e:
+                print(id_)
+                print(doc)
 
         # count = 8
-        count = 4
+        count = 32
         for i in range(len(list_sentence) // count):
             # self.bert.embed(list_sentence[i * count: (i+1) * count])
             try:
